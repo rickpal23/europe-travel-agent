@@ -345,6 +345,55 @@ if st.session_state.results:
                 f"**Award space:** {DOT.get(itin['award_likelihood'], '')} {itin['award_likelihood']}"
             )
 
+            # ── Seats.aero Award Availability ─────────────────────────────────
+            st.divider()
+            st.markdown("**🛫 Seats.aero Award Availability**")
+
+            sa_out = itin.get("award_availability", {})
+            sa_ret = itin.get("award_availability_return", {})
+            sa_live = sa_out.get("source") == "seats.aero"
+
+            if not sa_live:
+                # API key not set or request failed — show the reason clearly.
+                err = sa_out.get("error") or "Set SEATS_AERO_API_KEY in .env to enable live availability."
+                st.info(f"⚠️ Using estimated availability · {err}")
+            else:
+                sa_col_out, sa_col_ret = st.columns(2)
+
+                def _render_sa_leg(col, sa, direction):
+                    with col:
+                        st.markdown(f"**{direction}: {sa['route']}**")
+                        if sa.get("available"):
+                            st.markdown(
+                                f"✅ **{sa['seat_count']} date(s) with economy space**"
+                            )
+                            if sa.get("lowest_points"):
+                                st.metric(
+                                    "Lowest points cost",
+                                    f"{sa['lowest_points']:,} pts",
+                                )
+                            if sa.get("program"):
+                                st.caption(f"Cheapest via: **{sa['program']}**")
+                            if len(sa.get("all_programs", [])) > 1:
+                                st.caption(
+                                    "Also available: "
+                                    + ", ".join(sa["all_programs"][1:])
+                                )
+                            if sa.get("dates_with_space"):
+                                st.caption(
+                                    "Sample open dates: "
+                                    + ", ".join(sa["dates_with_space"])
+                                )
+                        elif sa.get("source") == "seats.aero":
+                            st.markdown("❌ **No economy award space** in this date window")
+                            st.caption("Try nearby dates or a different cabin.")
+                        else:
+                            err = sa.get("error") or "No data"
+                            st.markdown(f"〜 Estimated · {err}")
+
+                _render_sa_leg(sa_col_out, sa_out, "Outbound")
+                _render_sa_leg(sa_col_ret, sa_ret, "Return")
+
             # ── Research-based notes ──────────────────────────────────────────
             notes = itin.get("research_notes", {})
             if notes:
@@ -419,16 +468,29 @@ if st.session_state.results:
                 dq_live, dq_config, dq_est = st.columns(3)
 
                 with dq_live:
-                    st.markdown("**🌐 Live web (Tavily)**")
+                    st.markdown("**🌐 Live web (Tavily + Seats.aero)**")
+
+                    # Seats.aero — outbound + return summary
+                    sa_out = itin.get("award_availability", {})
+                    sa_ret = itin.get("award_availability_return", {})
+                    if sa_out.get("source") == "seats.aero":
+                        for sa, leg in [(sa_out, "Outbound"), (sa_ret, "Return")]:
+                            if sa.get("available"):
+                                pts_str = f" · {sa['lowest_points']:,} pts" if sa.get("lowest_points") else ""
+                                st.markdown(f"- {leg} ({sa['route']}): ✅ {sa['seat_count']} date(s){pts_str}")
+                            else:
+                                st.markdown(f"- {leg} ({sa['route']}): ❌ no space")
+                    else:
+                        st.markdown("- Award space (Seats.aero): 〜 estimated")
+                        st.caption(sa_out.get("error") or "Set SEATS_AERO_API_KEY in .env for live inventory")
+
+                    # Tavily web search
                     award_results = itin.get("award_web", [])
                     if award_results:
-                        st.markdown(
-                            f"- Award availability search: "
-                            f"✅ {len(award_results)} result(s)"
-                        )
+                        st.markdown(f"- Award search (Tavily): ✅ {len(award_results)} result(s)")
                         st.caption(f"_{itin.get('award_web_query', '')}_")
                     else:
-                        st.markdown("- Award availability: ⚠️ no live data")
+                        st.markdown("- Award search (Tavily): ⚠️ no live data")
                         st.caption("Set TAVILY_API_KEY in .env to enable")
                     st.markdown("- Flight & hotel strategy tips: see *Live Web Context* above")
 

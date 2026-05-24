@@ -16,6 +16,7 @@ from pathlib import Path
 import yaml
 
 from dotenv import load_dotenv
+from search.award_search import query_award_availability
 
 # Load variables from .env into os.environ before anything else reads them.
 # This means TAVILY_API_KEY in .env is now visible to os.environ.get() below.
@@ -553,6 +554,51 @@ def flight_points_agent(itin, date_options):
     print("   award availability tips from the web:")
     summarize(tips, limit=2)
 
+    # ── Seats.aero real availability (optional) ───────────────────────────────
+    # We query BOTH legs independently:
+    #   outbound: origin (e.g. SFO) → first city airport (e.g. LHR)
+    #   return:   last city airport (e.g. CDG) → origin (e.g. SFO)
+    # Date window spans the earliest to latest date across all candidate options.
+    # Results are stored as itin["award_availability"] (outbound) and
+    # itin["award_availability_return"] (return).  Neither affects scoring yet.
+    origin_apt     = USER_PROFILE["origin"]
+    out_dest_apt   = CITY_AIRPORTS.get(first_city, first_city)
+    ret_origin_apt = CITY_AIRPORTS.get(last_city, last_city)
+
+    all_depart = [opt["depart"] for opt in date_options]
+    all_return = [opt["return"] for opt in date_options]
+    sa_start   = min(all_depart).isoformat()
+    sa_end     = max(all_return).isoformat()
+
+    def _sa_log(label, result):
+        if result["source"] == "seats.aero":
+            if result["available"]:
+                pts_str = f" · from {result['lowest_points']:,} pts" if result.get("lowest_points") else ""
+                print(f"     ✅ {label}: {result['seat_count']} date(s) · {result['program']}{pts_str}")
+                if result["dates_with_space"]:
+                    print(f"        sample dates: {', '.join(result['dates_with_space'])}")
+            else:
+                print(f"     ❌ {label}: no {result['cabin']} award space found in window")
+        else:
+            print(f"     〜 {label}: {result.get('error', 'estimated')}")
+
+    print(f"   seats.aero: {origin_apt} → {out_dest_apt} (outbound)  {sa_start} – {sa_end}…")
+    award_avail_out = query_award_availability(
+        origin=origin_apt, destination=out_dest_apt,
+        cabin="economy", start_date=sa_start, end_date=sa_end,
+    )
+    _sa_log(f"{origin_apt} → {out_dest_apt}", award_avail_out)
+
+    print(f"   seats.aero: {ret_origin_apt} → {origin_apt} (return)   {sa_start} – {sa_end}…")
+    award_avail_ret = query_award_availability(
+        origin=ret_origin_apt, destination=origin_apt,
+        cabin="economy", start_date=sa_start, end_date=sa_end,
+    )
+    _sa_log(f"{ret_origin_apt} → {origin_apt}", award_avail_ret)
+
+    itin["award_availability"]        = award_avail_out
+    itin["award_availability_return"] = award_avail_ret
+
     # Per-date-range availability for this itinerary.
     print(f"   availability per date range (route: {USER_PROFILE['origin']} -> {first_city} ... {last_city} -> {USER_PROFILE['origin']}):")
     for opt in date_options:
@@ -779,19 +825,34 @@ def research_notes(itin, flight_tips, hotel_tips):
     cities     = [c for c, _ in itin["stops"]]
 
     # ── 1. Flight award insight ───────────────────────────────────────────────
-    # Uses the per-itinerary Tavily search (award_web), which targets the
-    # actual airline + route the planner would book.
-    flight_note = best_snippet(
-        award_web,
-        keywords=["award", "miles", "availability", "seat", "transfer",
-                  "economy", "redemption", "points"],
-    )
-    if not flight_note:
-        airline, pts = AMEX_FLIGHT_OPTIONS[first_city]
-        flight_note = (
-            f"No live award data. Using estimated rate of {pts:,} MR/person "
-            f"to {first_city} on {airline} — verify on the airline portal."
+    # Priority: Seats.aero live data > Tavily snippet > estimated fallback.
+    sa_out = itin.get("award_availability", {})
+    sa_ret = itin.get("award_availability_return", {})
+    airline, pts = AMEX_FLIGHT_OPTIONS[first_city]
+
+    if sa_out.get("source") == "seats.aero":
+        parts = []
+        for sa, direction in [(sa_out, "outbound"), (sa_ret, "return")]:
+            if sa.get("available"):
+                pts_str = f"{sa['lowest_points']:,} pts" if sa.get("lowest_points") else "?"
+                parts.append(
+                    f"{sa['route']} ({direction}): {sa['seat_count']} date(s), "
+                    f"from {pts_str} via {sa['program']}"
+                )
+            elif sa.get("source") == "seats.aero":
+                parts.append(f"{sa['route']} ({direction}): no economy space found")
+        flight_note = "Live Seats.aero — " + " · ".join(parts) if parts else "Live Seats.aero: no data returned."
+    else:
+        flight_note = best_snippet(
+            award_web,
+            keywords=["award", "miles", "availability", "seat", "transfer",
+                      "economy", "redemption", "points"],
         )
+        if not flight_note:
+            flight_note = (
+                f"No live award data. Using estimated rate of {pts:,} MR/person "
+                f"to {first_city} on {airline} — verify on the airline portal."
+            )
 
     # ── 2. Hotel / family-fit insight ────────────────────────────────────────
     # Uses the global Marriott hotel search, filtered for family-relevant terms.
