@@ -1,0 +1,4 @@
+[server]
+# Watch the project root (main.py, etc.) in addition to ui/
+# so Streamlit fully restarts when agent logic changes.
+watchedModuleNames = ["main"]

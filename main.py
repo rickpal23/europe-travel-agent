@@ -6,6 +6,7 @@
 #   3. (optional) export TAVILY_API_KEY="your-key-here"  -> turns on real web search
 #   4. python3 main.py
 
+import itertools
 import os
 import json
 import urllib.request
@@ -82,32 +83,29 @@ AMEX_FLIGHT_OPTIONS = {
 CITY_AVAIL = {"London": 3, "Paris": 2, "Amsterdam": 2, "Rome": 1, "Barcelona": 2}
 
 
-# ---------- Sample data ----------
-SAMPLE_ITINERARIES = [
-    {
-        "name":    "Two-City Classic",
-        "stops":   [("London", 5), ("Paris", 4)],
-        "transit": ["Overnight flight SFO -> LHR",
-                    "Eurostar train London -> Paris (no flight)",
-                    "Daytime flight CDG -> SFO"],
-    },
-    {
-        "name":    "North Loop (train-heavy)",
-        "stops":   [("London", 3), ("Amsterdam", 3), ("Paris", 3)],
-        "transit": ["Overnight flight SFO -> LHR",
-                    "Eurostar train London -> Amsterdam (no flight)",
-                    "Thalys train Amsterdam -> Paris (no flight)",
-                    "Daytime flight CDG -> SFO"],
-    },
-    {
-        "name":    "European Triangle",
-        "stops":   [("London", 3), ("Paris", 3), ("Rome", 3)],
-        "transit": ["Overnight flight SFO -> LHR",
-                    "Eurostar train London -> Paris (no flight)",
-                    "Short flight CDG -> FCO",
-                    "Daytime flight FCO -> SFO"],
-    },
-]
+# Preferred west-to-east travel order — used to sort cities into a logical route.
+CANONICAL_CITY_ORDER = ["London", "Amsterdam", "Paris", "Barcelona", "Rome"]
+
+# Transit strings between each city pair. Keys are frozensets so order doesn't matter.
+# These strings must include keywords that city_flow_agent and flight_points_agent
+# pattern-match on: "Eurostar", "Thalys", "TGV", "Short flight", "FCO", "BCN".
+TRANSIT_BETWEEN = {
+    frozenset({"London",    "Amsterdam"}): "Eurostar London → Amsterdam (4h, no flight)",
+    frozenset({"London",    "Paris"}):     "Eurostar London → Paris (2h20, no flight)",
+    frozenset({"Amsterdam", "Paris"}):     "Thalys Amsterdam → Paris (3h30, no flight)",
+    frozenset({"Paris",     "Barcelona"}): "TGV Paris → Barcelona (6h30, no flight)",
+    frozenset({"Paris",     "Rome"}):      "Short flight CDG → FCO (~2h)",
+    frozenset({"Amsterdam", "Rome"}):      "Short flight AMS → FCO (~2.5h)",
+    frozenset({"London",    "Rome"}):      "Short flight LHR → FCO (~2.5h)",
+    frozenset({"London",    "Barcelona"}): "Short flight LHR → BCN (~2h)",
+    frozenset({"Amsterdam", "Barcelona"}): "Short flight AMS → BCN (~2h)",
+    frozenset({"Barcelona", "Rome"}):      "Short flight BCN → FCO (~2h)",
+}
+
+CITY_AIRPORTS = {
+    "London": "LHR", "Paris": "CDG", "Amsterdam": "AMS",
+    "Barcelona": "BCN", "Rome": "FCO",
+}
 
 CITY_DATA = {
     "London": {
@@ -356,12 +354,96 @@ def date_selection_agent():
     return options
 
 
+def _order_cities(city_set):
+    """Sort cities into a logical west-to-east travel order."""
+    ordered = [c for c in CANONICAL_CITY_ORDER if c in city_set]
+    extras  = [c for c in city_set if c not in CANONICAL_CITY_ORDER]
+    return ordered + extras
+
+
+def _allocate_nights(cities, total_nights):
+    """Distribute nights across cities; first city gets extras for jet lag."""
+    n        = len(cities)
+    base     = total_nights // n
+    nights   = [base] * n
+    nights[0] += total_nights % n  # jet-lag buffer goes to the first stop
+    return list(zip(cities, nights))
+
+
+def _route_name(cities, required):
+    """Human-readable name for a candidate route."""
+    if len(cities) == 2:
+        return " + ".join(cities)
+    return " → ".join(cities)
+
+
+def generate_itineraries(required_cities, optional_cities, trip_length_str):
+    """
+    Build 3–5 candidate itineraries from the user's required + optional cities.
+
+    Strategy:
+    - Always include required cities (in geographic order).
+    - Try adding 0, 1, and 2 optional cities (all combinations).
+    - Cap at 5 candidates; deduplicate identical city sets.
+    """
+    try:
+        parts = [int(p.strip()) for p in trip_length_str.split("to") if p.strip().isdigit()]
+        total_nights = (parts[0] + parts[1]) // 2 if len(parts) == 2 else (parts[0] if parts else 9)
+    except Exception:
+        total_nights = 9
+
+    valid_req = [c for c in required_cities if c in CITY_DATA]
+    valid_opt = [c for c in optional_cities if c in CITY_DATA]
+
+    candidate_sets, seen = [], []
+    for extra_count in range(3):                          # 0, 1, or 2 optional cities added
+        for combo in itertools.combinations(valid_opt, extra_count):
+            city_set = frozenset(valid_req) | frozenset(combo)
+            if city_set not in seen:
+                seen.append(city_set)
+                candidate_sets.append(city_set)
+            if len(candidate_sets) == 5:
+                break
+        if len(candidate_sets) == 5:
+            break
+
+    origin = USER_PROFILE["origin"]
+    itineraries = []
+    for city_set in candidate_sets:
+        ordered   = _order_cities(city_set)
+        stops     = _allocate_nights(ordered, total_nights)
+        first_apt = CITY_AIRPORTS.get(ordered[0],  ordered[0])
+        last_apt  = CITY_AIRPORTS.get(ordered[-1], ordered[-1])
+
+        transit = [f"Overnight flight {origin} -> {first_apt}"]
+        for i in range(len(ordered) - 1):
+            key = frozenset({ordered[i], ordered[i + 1]})
+            transit.append(TRANSIT_BETWEEN.get(key, f"Transit {ordered[i]} → {ordered[i + 1]}"))
+        transit.append(f"Daytime flight {last_apt} -> {origin}")
+
+        itineraries.append({
+            "name":    _route_name(ordered, valid_req),
+            "stops":   stops,
+            "transit": transit,
+        })
+
+    return itineraries
+
+
 def itinerary_builder_agent(date_options):
-    print("itinerary_builder_agent: building 3 candidate itineraries (minimizing hotel changes)...")
-    print(f"   {len(date_options)} candidate date ranges available — flight agent will pick best per itinerary\n")
+    required  = USER_PROFILE.get("required_cities", ["London", "Paris"])
+    optional  = USER_PROFILE.get("optional_cities", [])
+    trip_len  = USER_PROFILE.get("trip_length_days", "7 to 10")
+    origin    = USER_PROFILE["origin"]
+    candidates = generate_itineraries(required, optional, trip_len)
+
+    print(f"itinerary_builder_agent: generated {len(candidates)} candidate itinerary/ies...")
+    print(f"   required cities: {', '.join(required)}")
+    print(f"   optional cities: {', '.join(optional) if optional else 'none'}")
+    print(f"   trip length: {trip_len} nights\n")
 
     built = []
-    for sample in SAMPLE_ITINERARIES:
+    for sample in candidates:
         cities = [c for c, _ in sample["stops"]]
         nights = sum(n for _, n in sample["stops"])
         moves  = len(cities) - 1
@@ -371,23 +453,24 @@ def itinerary_builder_agent(date_options):
         print(f"   {len(cities)} cities, {nights} nights, {moves} hotel change(s), pace: {pace}")
 
         days, day_num = [], 1
-        for stop_idx, (city, n) in enumerate(sample["stops"]):
+        for city, n in sample["stops"]:
             for i in range(n):
                 if day_num == 1:
-                    note = f"Arrive in {city} (overnight flight from SFO), settle in"
+                    note = f"Arrive in {city} (overnight flight from {origin}), settle in"
                 elif i == 0:
                     note = f"Travel to {city} (HOTEL CHANGE), check in"
                 else:
                     note = f"Explore {city}"
                 days.append({"day": day_num, "city": city, "note": note})
                 day_num += 1
-        days.append({"day": day_num, "city": cities[-1], "note": "Fly home to SFO"})
+        days.append({"day": day_num, "city": cities[-1], "note": f"Fly home to {origin}"})
 
         for d in days:
             print(f"   Day {d['day']:>2}: {d['city']:<10} - {d['note']}")
 
-        ages = USER_PROFILE["travelers"]["kids_ages"]
-        print(f"   Notes for kids ages {ages[0]} and {ages[1]}:")
+        ages = USER_PROFILE["travelers"].get("kids_ages", [])
+        if len(ages) >= 2:
+            print(f"   Notes for kids ages {ages[0]} and {ages[1]}:")
         for city in cities:
             print(f"     - {city}: {CITY_DATA[city]['kid_notes']}")
         print()
@@ -409,14 +492,21 @@ def flight_points_agent(itin, date_options):
     first_city = itin["stops"][0][0]
     last_city  = itin["stops"][-1][0]
 
-    # Real web search informed by the dates and route.
-    tips = search_web(f"best award availability {USER_PROFILE['origin']} to {first_city} August Flying Blue Virgin Atlantic 2026")
-    itin["award_web"] = tips   # saved so the UI can display sources
+    # Use the actual airline the planner would book (from AMEX_FLIGHT_OPTIONS)
+    # so the query matches real redemption-path content on points blogs.
+    airline, _  = AMEX_FLIGHT_OPTIONS[first_city]
+    award_query = (
+        f"{airline} award seat availability {USER_PROFILE['origin']} {first_city} "
+        f"August {TRAVEL_YEAR} economy miles Amex transfer how to find book"
+    )
+    tips = search_web(award_query)
+    itin["award_web"]       = tips         # results saved for UI display
+    itin["award_web_query"] = award_query  # query saved so UI can show what was asked
     print("   award availability tips from the web:")
     summarize(tips, limit=2)
 
     # Per-date-range availability for this itinerary.
-    print(f"   availability per date range (route: SFO -> {first_city} ... {last_city} -> SFO):")
+    print(f"   availability per date range (route: {USER_PROFILE['origin']} -> {first_city} ... {last_city} -> {USER_PROFILE['origin']}):")
     for opt in date_options:
         avail, _ = availability_for(itin, opt)
         marker = "  (deal-hunter)" if opt["is_deal_hunter"] else ""
@@ -445,15 +535,17 @@ def flight_points_agent(itin, date_options):
         pts_short = 0
         flight_cash_overflow = 0
 
+    origin = USER_PROFILE["origin"]
     intra_cash = 0
-    for t in itin["transit"]:
+    for t in itin["transit"][1:-1]:   # only count intra-Europe legs
         if "Eurostar" in t:        intra_cash += 180 * pax
         elif "Thalys" in t:        intra_cash += 130 * pax
+        elif "TGV" in t:           intra_cash += 120 * pax
         elif "Short flight" in t:  intra_cash += 150 * pax
 
     plan = {
-        "outbound":             f"SFO -> {first_city} on {out_airline} x {pax} pax ({out_pts_total:,} MR), depart {fmt_date(chosen['depart'])}",
-        "return":               f"{last_city} -> SFO on {ret_airline} x {pax} pax ({ret_pts_total:,} MR), depart {fmt_date(chosen['return'])}",
+        "outbound":             f"{origin} -> {first_city} on {out_airline} x {pax} pax ({out_pts_total:,} MR), depart {fmt_date(chosen['depart'])}",
+        "return":               f"{last_city} -> {origin} on {ret_airline} x {pax} pax ({ret_pts_total:,} MR), depart {fmt_date(chosen['return'])}",
         "amex_used":            pts_used,
         "amex_short":           pts_short,
         "flight_cash_overflow": flight_cash_overflow,
@@ -544,15 +636,21 @@ def city_flow_agent(itin):
     print(f"   city_flow_agent: evaluating travel flow for '{itin['name']}'...")
 
     n = len(itin["stops"])
-    has_eurostar = any("Eurostar" in t for t in itin["transit"])
-    has_thalys   = any("Thalys"   in t for t in itin["transit"])
-    has_short_flight = any("Short flight" in t for t in itin["transit"])
-    long_intra_hop = any("FCO" in t or "BCN" in t for t in itin["transit"])
+    # Skip the transatlantic outbound/return — only evaluate intra-Europe legs.
+    intra = itin["transit"][1:-1]
+    has_eurostar     = any("Eurostar"     in t for t in intra)
+    has_thalys       = any("Thalys"       in t for t in intra)
+    has_tgv          = any("TGV"          in t for t in intra)
+    has_short_flight = any("Short flight" in t for t in intra)
+    long_intra_hop   = any("FCO" in t or "BCN" in t for t in intra)
+    all_rail         = not has_short_flight and (has_eurostar or has_thalys or has_tgv)
 
     if n == 2:
         score, note = 10, "2 cities only, 1 train hop — minimal transit"
     elif n == 3 and has_eurostar and has_thalys and not long_intra_hop:
-        score, note = 10, "3 cities, all train-connected — efficient"
+        score, note = 10, "3 cities, all classic rail (Eurostar + Thalys) — efficient"
+    elif n == 3 and all_rail:
+        score, note = 9,  "3 cities, all train-connected — smooth flow"
     elif n == 3 and long_intra_hop:
         score, note = 5,  "3 cities but a long flight south breaks the flow"
     elif n == 3 and has_short_flight:
@@ -627,11 +725,12 @@ def deal_scorer_agent(itineraries):
         score = 0
         breakdown = []
 
-        if all(c in cities for c in USER_PROFILE["required_cities"]):
+        req = USER_PROFILE["required_cities"]
+        if all(c in cities for c in req):
             score += 20
-            breakdown.append("+20 includes London and Paris (required)")
+            breakdown.append(f"+20 includes {' and '.join(req)} (required)")
         else:
-            missing = [c for c in USER_PROFILE["required_cities"] if c not in cities]
+            missing = [c for c in req if c not in cities]
             breakdown.append(f"+0 missing required cities: {', '.join(missing)}")
 
         score += flow["score"]
@@ -748,12 +847,16 @@ def day_by_day_itinerary_agent(winner):
                            f"Check into {CITY_DATA[city]['hotel']} on a Marriott free-night cert.")
         elif is_last:
             airline, _ = AMEX_FLIGHT_OPTIONS[city]
-            main    = f"Fly {city} -> SFO on {airline} using Amex MR points"
+            main    = f"Fly {city} -> {USER_PROFILE['origin']} on {airline} using Amex MR points"
             lighter = "Pastry / souvenir stop near the hotel before heading to the airport"
             family  = "Build in extra time to the airport — kids and luggage move slow."
-            points_note = f"Return: 4 x Amex MR transfers to {airline}."
+            points_note = f"Return: {total_travelers()} x Amex MR transfers to {airline}."
         elif is_change:
-            main    = f"Eurostar from {prev_city} to {city} (~2.5 hrs, no flight)"
+            transit_str = next(
+                (t for t in winner["transit"] if prev_city in t and city in t),
+                f"Transit from {prev_city} to {city}",
+            )
+            main    = transit_str
             lighter = "Settle into the new hotel, dinner near the property, walk-only afternoon"
             family  = "Travel day — keep it light, no museums."
             points_note = (f"Check into {CITY_DATA[city]['hotel']} "
@@ -787,12 +890,30 @@ def trip_planner_agent():
     # 1) Date candidates
     date_options = date_selection_agent()
 
-    # 2) Web context
+    # 2) Web context — targeted queries built from the actual user profile
     print("trip_planner_agent: pulling fresh web context for your strategies...")
-    flight_tips = search_web("Amex Membership Rewards transfer partners SFO Europe family of 4 summer")
+
+    origin     = USER_PROFILE["origin"]
+    cities_str = " and ".join(USER_PROFILE.get("required_cities", ["London", "Paris"]))
+    n_pax      = USER_PROFILE["travelers"]["adults"] + USER_PROFILE["travelers"]["kids"]
+
+    # Flying Blue promo awards are the main Amex MR sweet spot for transatlantic.
+    # "promo award" and "sweet spot" are the phrases that appear on points blogs.
+    flight_query = (
+        f"Flying Blue promo award {origin} {cities_str} economy {TRAVEL_YEAR} "
+        f"Amex Membership Rewards transfer miles cost how many points"
+    )
+    flight_tips = search_web(flight_query)
     print("   flight strategy tips:")
     summarize(flight_tips)
-    hotel_tips = search_web("best Marriott Bonvoy hotels Europe family of 4 suites London Paris")
+
+    # Hotel query asks about the actual redemption strategy (certs, points value)
+    # and the specific room requirement (suite / sofa bed for families).
+    hotel_query = (
+        f"Marriott Bonvoy {cities_str} family of {n_pax} suite {TRAVEL_YEAR} "
+        f"free night certificate points redemption sofa bed review"
+    )
+    hotel_tips = search_web(hotel_query)
     print("   hotel strategy tips:")
     summarize(hotel_tips)
     print()
@@ -865,9 +986,26 @@ def trip_planner_agent():
     print("=" * 64 + "\n")
     day_by_day_itinerary_agent(winner)
 
+    winner = ranked[0]
     web_context = {
-        "flight_tips": flight_tips,
-        "hotel_tips":  hotel_tips,
+        "live":     bool(TAVILY_API_KEY),
+        "searches": [
+            {
+                "label":   "Amex MR flight strategy",
+                "query":   flight_query,
+                "results": flight_tips,
+            },
+            {
+                "label":   "Marriott hotel options",
+                "query":   hotel_query,
+                "results": hotel_tips,
+            },
+            {
+                "label":   f"Award availability ({' → '.join(c for c, _ in winner['stops'][:2])}…)",
+                "query":   winner.get("award_web_query", ""),
+                "results": winner.get("award_web", []),
+            },
+        ],
     }
     return ranked, web_context
 

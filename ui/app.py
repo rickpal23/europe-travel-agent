@@ -247,6 +247,62 @@ if st.session_state.results:
 
     st.divider()
 
+    # ── Live Web Context Used ─────────────────────────────────────────────────
+    # This section is always shown and expanded so users can see what real-world
+    # data was used — or wasn't — when building this plan.
+    wc = st.session_state.get("web_context", {})
+
+    if wc.get("live"):
+        search_count = len([s for s in wc.get("searches", []) if s.get("results")])
+        ctx_header   = f"🌐 Live Web Context Used  ·  ✅ Tavily API active  ·  {search_count} searches ran"
+    else:
+        ctx_header   = "🌐 Live Web Context Used  ·  ⚠️ Tavily API key not set — no live searches ran"
+
+    with st.expander(ctx_header, expanded=True):
+        searches = wc.get("searches", [])
+
+        if not searches:
+            st.info("No web searches were run. Add a TAVILY_API_KEY to your .env file to enable live search.")
+        else:
+            KEYWORDS = {"point", "mile", "award", "saver", "availability", "seat",
+                        "marriott", "bonvoy", "transfer", "partner", "suite", "family"}
+
+            for idx, search in enumerate(searches, 1):
+                results = search.get("results", [])
+                label   = search.get("label", f"Search {idx}")
+                query   = search.get("query", "")
+
+                # Section header + query pill
+                st.markdown(f"**{idx}. {label}**")
+                st.code(query, language=None)
+
+                if not results:
+                    st.caption("No results returned (API may be offline or key invalid).")
+                else:
+                    for r in results:
+                        title   = r.get("title", "").strip()
+                        url     = r.get("url", "")
+                        content = r.get("content", "")
+
+                        # Pick the most informative sentence — prefer ones with travel keywords
+                        sentences = [s.strip() for s in content.split(". ") if len(s.strip()) > 50]
+                        snippet   = next(
+                            (s for s in sentences if any(k in s.lower() for k in KEYWORDS)),
+                            sentences[0] if sentences else content[:150],
+                        )
+
+                        # Source line: linked title + snippet below
+                        if url:
+                            st.markdown(f"&nbsp;&nbsp;📄 [{title or url}]({url})")
+                        else:
+                            st.markdown(f"&nbsp;&nbsp;📄 {title or '(no title)'}")
+                        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{snippet}.")
+
+                if idx < len(searches):
+                    st.markdown("---")
+
+    st.divider()
+
     # --- Detailed card for each itinerary ---
     # st.expander creates a collapsible section.
     # expanded=True means the winner starts open; others start collapsed.
@@ -271,24 +327,6 @@ if st.session_state.results:
                 f"**Why these dates:** {itin['date_reason']}  \n"
                 f"**Award space:** {DOT.get(itin['award_likelihood'], '')} {itin['award_likelihood']}"
             )
-
-            # Web context for award availability — real sources from Tavily
-            award_web = itin.get("award_web", [])
-            if award_web:
-                st.markdown("**What the web says about award availability on this route:**")
-                for r in award_web[:2]:
-                    # Pull the most useful sentence: prefer ones mentioning points or miles
-                    sentences = [s.strip() for s in r["content"].split(". ") if len(s.strip()) > 40]
-                    keywords  = ["point", "mile", "award", "saver", "availability", "seat"]
-                    snippet   = next(
-                        (s for s in sentences if any(k in s.lower() for k in keywords)),
-                        sentences[0] if sentences else "",
-                    )
-                    if snippet:
-                        if r.get("url"):
-                            st.markdown(f"  - [{r.get('title') or r['url']}]({r['url']}): {snippet}.")
-                        else:
-                            st.markdown(f"  - {snippet}.")
 
             # Pros and cons side by side
             st.divider()
@@ -341,26 +379,6 @@ if st.session_state.results:
                         st.markdown(f"*{day['family']}*")
                         if day.get("points_note"):
                             st.info(day["points_note"])
-
-    # --- Web research panel ---
-    # Shows every source Tavily returned so the user can see what informed the plan.
-    wc = st.session_state.get("web_context", {})
-    if wc.get("flight_tips") or wc.get("hotel_tips"):
-        with st.expander("🌐 Web research used for this plan"):
-            def _show_results(label, results):
-                if not results:
-                    return
-                st.markdown(f"**{label}**")
-                for r in results:
-                    sentences = [s.strip() for s in r["content"].split(". ") if len(s.strip()) > 40]
-                    snippet   = sentences[0] if sentences else r["content"][:120]
-                    if r.get("url"):
-                        st.markdown(f"- [{r.get('title') or r['url']}]({r['url']}): {snippet}.")
-                    else:
-                        st.markdown(f"- {snippet}.")
-
-            _show_results("Flight strategy", wc.get("flight_tips", []))
-            _show_results("Hotel strategy",  wc.get("hotel_tips",  []))
 
     # --- Agent log ---
     with st.expander("Agent log (what happened behind the scenes)"):
