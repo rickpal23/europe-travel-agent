@@ -1,0 +1,18 @@
+{
+  "name": "Rick",
+  "origin": "SFO",
+  "travelers": {
+    "adults": 2,
+    "kids": 2,
+    "kids_ages": [
+      14,
+      11
+    ]
+  },
+  "wallet": {
+    "amex_mr": 200000,
+    "marriott_free_nights": 5,
+    "bonvoy_points": 250000
+  },
+  "_saved_at": "2026-05-24 16:21 UTC"
+}
