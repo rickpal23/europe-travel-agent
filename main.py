@@ -798,95 +798,118 @@ def research_notes(itin, flight_tips, hotel_tips):
 
 
 def deal_scorer_agent(itineraries):
-    print("deal_scorer_agent: scoring each itinerary out of 100 (family-tuned)...\n")
+    """
+    Score each itinerary out of 100 using five equal pillars (20 pts each).
+
+    Pillar 1  Must-visit cities   — did we include every required city?
+    Pillar 2  Family experience   — room size, pace, and hotel changes
+    Pillar 3  Points coverage     — did points pay for flights and hotels?
+    Pillar 4  Travel flow         — how smooth is the routing?
+    Pillar 5  Cash efficiency     — how little out-of-pocket cash is needed?
+
+    Each pillar has a transparent sub-breakdown so the score is easy to explain.
+    """
+    print("deal_scorer_agent: scoring each itinerary out of 100 (5 pillars × 20 pts)...\n")
 
     for itin in itineraries:
-        cities = [c for c, _ in itin["stops"]]
-        flight = itin["flight_plan"]
-        hotel  = itin["hotel_plan"]
-        flow   = itin["flow"]
+        cities  = [c for c, _ in itin["stops"]]
+        flight  = itin["flight_plan"]
+        hotel   = itin["hotel_plan"]
+        flow    = itin["flow"]
         comfort = family_comfort_score(itin)
         itin["family_comfort"] = comfort
 
-        score = 0
+        # Pre-compute total cash (used in Pillar 5 and stored for the UI).
+        total_cash = (
+            hotel["cash_for_hotels"]
+            + flight["intra_cash"]
+            + flight["flight_cash_overflow"]
+        )
+
+        score     = 0
         breakdown = []
 
-        req = USER_PROFILE["required_cities"]
-        if all(c in cities for c in req):
-            score += 20
-            breakdown.append(f"+20 includes {' and '.join(req)} (required)")
+        # ── Pillar 1: Must-visit cities (20 pts) ─────────────────────────────
+        # 10 pts per required city included, capped at 20.
+        req        = USER_PROFILE["required_cities"]
+        n_req      = len(req) if req else 1
+        n_included = sum(1 for c in req if c in cities)
+        p1 = min(20, round(20 * n_included / n_req))
+        if n_included == n_req:
+            breakdown.append(
+                f"+{p1}/20 must-visit cities — all {n_req} included "
+                f"({', '.join(req)})"
+            )
         else:
             missing = [c for c in req if c not in cities]
-            breakdown.append(f"+0 missing required cities: {', '.join(missing)}")
+            breakdown.append(
+                f"+{p1}/20 must-visit cities — {n_included}/{n_req} included "
+                f"(missing: {', '.join(missing)})"
+            )
+        score += p1
 
-        score += flow["score"]
-        breakdown.append(f"+{flow['score']} travel flow ({flow['note']})")
+        # ── Pillar 2: Family experience (20 pts) ──────────────────────────────
+        # Room fit (8 pts): proportion of cities with rooms ≥ 400 sqft.
+        n_cities  = len(cities)
+        n_small   = hotel["small_room_count"]
+        room_pts  = round(8 * (n_cities - n_small) / n_cities)
+        # Pace (7 pts): relaxed > moderate > rushed.
+        pace_pts  = {"relaxed": 7, "moderate": 5, "rushed": 2}[itin["pace"]]
+        # Hotel changes (5 pts): fewer is better; -2 pts per change beyond the first.
+        moves_pts = max(0, 5 - (itin["moves"] - 1) * 2)
+        p2 = room_pts + pace_pts + moves_pts
+        breakdown.append(
+            f"+{p2}/20 family experience — "
+            f"room fit {room_pts}/8, "
+            f"pace {pace_pts}/7 ({itin['pace']}), "
+            f"hotel changes {moves_pts}/5 ({itin['moves']} change(s))"
+        )
+        score += p2
 
-        amex_used  = flight["amex_used"]
-        amex_avail = USER_PROFILE["points"]["amex_mr"]
-        ratio = amex_used / amex_avail
-        if flight["amex_short"] == 0 and ratio >= 0.7:
-            amex_pts, amex_note = 15, f"strong family use ({amex_used:,} of {amex_avail:,})"
-        elif flight["amex_short"] == 0:
-            amex_pts, amex_note = 12, f"using points but room left ({amex_used:,} of {amex_avail:,})"
+        # ── Pillar 3: Points coverage (20 pts) ────────────────────────────────
+        # Flights (10 pts): did Amex MR cover all transatlantic tickets?
+        if flight["amex_short"] == 0:
+            flight_cov_pts = 10
         else:
-            amex_pts, amex_note = 8, f"short by {flight['amex_short']:,} MR — needs cash top-up"
-        score += amex_pts
-        breakdown.append(f"+{amex_pts} Amex strategy: {amex_note}")
-
-        certs_used  = hotel["certs_used"]
-        certs_avail = USER_PROFILE["points"]["marriott_free_nights"]
-        cert_ratio  = certs_used / certs_avail if certs_avail else 0
-        bonvoy_used = hotel["points_used"]
-        if cert_ratio >= 0.6 and bonvoy_used > 0:
-            mar_pts, mar_note = 15, f"great mix ({certs_used} certs + {bonvoy_used:,} Bonvoy pts)"
-        elif cert_ratio >= 0.4:
-            mar_pts, mar_note = 11, f"decent ({certs_used} certs used)"
+            amex_total     = flight["amex_used"] + flight["amex_short"]
+            flight_cov_pts = round(10 * flight["amex_used"] / amex_total) if amex_total else 0
+        # Hotels (10 pts): what fraction of hotel value was paid with points/certs?
+        total_hotel_value = sum(
+            CITY_DATA[c]["cash_per_night"] * n for c, n in itin["stops"]
+        )
+        if total_hotel_value:
+            hotel_cov_ratio = max(0.0, 1.0 - hotel["cash_for_hotels"] / total_hotel_value)
         else:
-            mar_pts, mar_note = 6,  f"only {certs_used} cert(s) used"
-        score += mar_pts
-        breakdown.append(f"+{mar_pts} Marriott strategy: {mar_note}")
+            hotel_cov_ratio = 1.0
+        hotel_cov_pts = round(10 * hotel_cov_ratio)
+        p3 = flight_cov_pts + hotel_cov_pts
+        breakdown.append(
+            f"+{p3}/20 points coverage — "
+            f"flights {flight_cov_pts}/10, "
+            f"hotels {hotel_cov_pts}/10 "
+            f"({hotel_cov_ratio:.0%} of hotel value on points/certs)"
+        )
+        score += p3
 
-        comfort_pts = round(comfort * 1.5)
-        score += comfort_pts
-        breakdown.append(f"+{comfort_pts} family comfort score: {comfort}/10")
+        # ── Pillar 4: Travel flow (20 pts) ────────────────────────────────────
+        # city_flow_agent returns 5–10; multiply by 2 to fill the 20-pt pillar.
+        p4 = flow["score"] * 2
+        breakdown.append(f"+{p4}/20 travel flow — {flow['note']}")
+        score += p4
 
-        pace_pts = {"relaxed": 10, "moderate": 8, "rushed": 3}[itin["pace"]]
-        score += pace_pts
-        breakdown.append(f"+{pace_pts} pace ({itin['pace']})")
+        # ── Pillar 5: Cash efficiency (20 pts) ────────────────────────────────
+        # Linear scale: 20 pts at ≤ $500 cash, 0 pts at ≥ $5,000.
+        p5 = round(20 * max(0.0, min(1.0, 1.0 - (total_cash - 500) / 4_500)))
+        breakdown.append(f"+{p5}/20 cash efficiency — ~${total_cash} total out-of-pocket")
+        score += p5
 
-        ratings = [CITY_DATA[c]["rating"] for c in cities]
-        avg_rating = sum(ratings) / len(ratings)
-        quality_pts = max(0, min(10, round((avg_rating - 4.0) * 20)))
-        score += quality_pts
-        breakdown.append(f"+{quality_pts} hotel quality (avg rating {avg_rating:.2f}/5)")
-
-        total_cash = hotel["cash_for_hotels"] + flight["intra_cash"] + flight["flight_cash_overflow"]
-        if   total_cash <= 1000: cash_pts = 5
-        elif total_cash <= 2500: cash_pts = 4
-        elif total_cash <= 5000: cash_pts = 3
-        elif total_cash <= 8000: cash_pts = 2
-        else:                    cash_pts = 1
-        score += cash_pts
-        breakdown.append(f"+{cash_pts} cash outlay (~${total_cash})")
-
-        small_rooms = hotel["small_room_count"]
-        if small_rooms:
-            score -= 5 * small_rooms
-            breakdown.append(f"-{5 * small_rooms} small-room penalty ({small_rooms} hotel(s) under 400 sqft)")
-        if itin["moves"] > 1:
-            extra_moves = itin["moves"] - 1
-            score -= 5 * extra_moves
-            breakdown.append(f"-{5 * extra_moves} hotel-change penalty ({itin['moves']} total changes)")
-
-        score = max(0, score)
         itin["score"]      = score
         itin["breakdown"]  = breakdown
         itin["total_cash"] = total_cash
 
-        print(f"   {itin['name']}: {score}/100  (family comfort {comfort}/10, "
-              f"{itin['moves']} hotel change(s), pace {itin['pace']}, "
-              f"award space {itin['award_likelihood']})")
+        print(f"   {itin['name']}: {score}/100  "
+              f"(family comfort {comfort}/10, {itin['moves']} hotel change(s), "
+              f"pace {itin['pace']}, award space {itin['award_likelihood']})")
         for b in breakdown:
             print(f"     • {b}")
         print()
