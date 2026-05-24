@@ -198,19 +198,25 @@ def search_web(query):
 
 def best_snippet(results, keywords=None):
     """Pick the most informative single sentence from a list of search results.
-    Prefers sentences that contain at least one of the given keywords."""
+    Prefers sentences that contain at least one of the given keywords.
+    Skips markdown headings (lines starting with #) and very short fragments."""
     keywords = [k.lower() for k in (keywords or [])]
+
+    def _is_usable(s):
+        s = s.strip()
+        return len(s) >= 40 and not s.startswith("#")
+
     for r in results:
         for sentence in r["content"].split(". "):
             s = sentence.strip()
-            if len(s) < 40:
+            if not _is_usable(s):
                 continue
             if not keywords or any(k in s.lower() for k in keywords):
                 return s
     # Fallback: first non-trivial sentence of the first result
     if results:
         for sentence in results[0]["content"].split(". "):
-            if len(sentence.strip()) >= 40:
+            if _is_usable(sentence):
                 return sentence.strip()
     return ""
 
@@ -674,6 +680,123 @@ def build_pros_cons(itin):
     return pros, cons
 
 
+def research_notes(itin, flight_tips, hotel_tips):
+    """
+    Derive four short plain-English notes from Tavily search results.
+
+    Each note picks the single most useful sentence from the relevant
+    result set (using best_snippet) and falls back to an honest
+    'no live data' message when Tavily wasn't available.
+
+    Stored as itin["research_notes"] so the UI can display them and
+    the agent log captures them without any duplication of logic.
+    """
+    award_web  = itin.get("award_web", [])
+    award_lh   = itin.get("award_likelihood", "Medium")
+    fp         = itin.get("flight_plan", {})
+    hp         = itin.get("hotel_plan", {})
+    first_city = itin["stops"][0][0]
+    last_city  = itin["stops"][-1][0]
+    cities     = [c for c, _ in itin["stops"]]
+
+    # ── 1. Flight award insight ───────────────────────────────────────────────
+    # Uses the per-itinerary Tavily search (award_web), which targets the
+    # actual airline + route the planner would book.
+    flight_note = best_snippet(
+        award_web,
+        keywords=["award", "miles", "availability", "seat", "transfer",
+                  "economy", "redemption", "points"],
+    )
+    if not flight_note:
+        airline, pts = AMEX_FLIGHT_OPTIONS[first_city]
+        flight_note = (
+            f"No live award data. Using estimated rate of {pts:,} MR/person "
+            f"to {first_city} on {airline} — verify on the airline portal."
+        )
+
+    # ── 2. Hotel / family-fit insight ────────────────────────────────────────
+    # Uses the global Marriott hotel search, filtered for family-relevant terms.
+    hotel_note = best_snippet(
+        hotel_tips,
+        keywords=["suite", "family", "sofa", "bed", "certificate",
+                  "free night", "kids", "children", "room"],
+    )
+    if not hotel_note:
+        smallest = hp.get("smallest_sqft", 0)
+        hotel_note = (
+            f"No live hotel data. All hotels in this route fit a family of 4; "
+            f"smallest room is {smallest:.0f} sqft."
+        ) if smallest else "No live hotel data — using config estimates."
+
+    # ── 3. Points strategy insight ───────────────────────────────────────────
+    # Uses the global Flying Blue / Amex MR search for transfer-strategy tips.
+    strategy_note = best_snippet(
+        flight_tips,
+        keywords=["Flying Blue", "promo", "transfer", "Amex", "bonus",
+                  "partner", "sweet spot", "miles"],
+    )
+    if not strategy_note:
+        strategy_note = (
+            "No live strategy tips. Transfer Amex MR to Flying Blue or "
+            "Virgin Atlantic — watch for Flying Blue monthly promo awards."
+        )
+
+    # ── 4. Confidence / warnings ─────────────────────────────────────────────
+    # Synthesised from the itinerary's own data rather than web results.
+    warnings = []
+    pts_short = fp.get("amex_short", 0)
+    if pts_short:
+        warnings.append(
+            f"{pts_short:,} MR short — budget ~${fp['flight_cash_overflow']} "
+            f"extra cash to top up flights."
+        )
+    if award_lh == "Low":
+        warnings.append(
+            "Award space rated Low — book as soon as the calendar opens "
+            "(typically 330 days out)."
+        )
+    if hp.get("smallest_sqft", 999) < 400:
+        warnings.append(
+            f"One hotel room is under 400 sqft — snug for a family of 4; "
+            f"request a connecting room or upgrade at check-in."
+        )
+    if not TAVILY_API_KEY:
+        warnings.append(
+            "No Tavily key set — flight and hotel data is estimated, not verified live."
+        )
+
+    if warnings:
+        confidence = " · ".join(warnings)
+    elif award_lh == "High" and TAVILY_API_KEY:
+        confidence = "Live search supports good availability for this route."
+    elif award_lh == "High":
+        confidence = (
+            "Estimated high availability based on city patterns — "
+            "confirm on the airline portal before transferring points."
+        )
+    else:
+        confidence = (
+            "Medium confidence — check award space 11 months out when "
+            "the booking calendar opens."
+        )
+
+    notes = {
+        "flight":     flight_note,
+        "hotel":      hotel_note,
+        "strategy":   strategy_note,
+        "confidence": confidence,
+        "has_warnings": bool(warnings),
+    }
+
+    print(f"   research_notes for '{itin['name']}':")
+    print(f"     flight:     {flight_note[:80]}{'…' if len(flight_note) > 80 else ''}")
+    print(f"     hotel:      {hotel_note[:80]}{'…' if len(hotel_note) > 80 else ''}")
+    print(f"     strategy:   {strategy_note[:80]}{'…' if len(strategy_note) > 80 else ''}")
+    print(f"     confidence: {confidence[:80]}{'…' if len(confidence) > 80 else ''}")
+
+    return notes
+
+
 def deal_scorer_agent(itineraries):
     print("deal_scorer_agent: scoring each itinerary out of 100 (family-tuned)...\n")
 
@@ -888,12 +1011,13 @@ def trip_planner_agent():
     print("Per-itinerary planning:\n")
     for itin in itineraries:
         print(f"=== {itin['name']} ===")
-        itin["flight_plan"] = flight_points_agent(itin, date_options)
-        itin["hotel_plan"]  = hotel_points_agent(itin)
-        itin["flow"]        = city_flow_agent(itin)
-        pros, cons = build_pros_cons(itin)
-        itin["pros"] = pros
-        itin["cons"] = cons
+        itin["flight_plan"]     = flight_points_agent(itin, date_options)
+        itin["hotel_plan"]      = hotel_points_agent(itin)
+        itin["flow"]            = city_flow_agent(itin)
+        pros, cons              = build_pros_cons(itin)
+        itin["pros"]            = pros
+        itin["cons"]            = cons
+        itin["research_notes"]  = research_notes(itin, flight_tips, hotel_tips)
         print()
 
     # 5) Score

@@ -328,6 +328,31 @@ if st.session_state.results:
                 f"**Award space:** {DOT.get(itin['award_likelihood'], '')} {itin['award_likelihood']}"
             )
 
+            # ── Research-based notes ──────────────────────────────────────────
+            notes = itin.get("research_notes", {})
+            if notes:
+                st.divider()
+                st.markdown("**Research Notes**")
+                n1, n2, n3 = st.columns(3)
+                with n1:
+                    st.markdown("✈️ **Flight award**")
+                    st.caption(notes["flight"])
+                with n2:
+                    st.markdown("🏨 **Hotel & family**")
+                    st.caption(notes["hotel"])
+                with n3:
+                    st.markdown("💡 **Points strategy**")
+                    st.caption(notes["strategy"])
+
+                confidence = notes.get("confidence", "")
+                if confidence:
+                    if notes.get("has_warnings"):
+                        st.warning(confidence)
+                    elif "high" in confidence.lower() and "live" in confidence.lower():
+                        st.success(confidence)
+                    else:
+                        st.info(confidence)
+
             # Pros and cons side by side
             st.divider()
             pro_col, con_col = st.columns(2)
