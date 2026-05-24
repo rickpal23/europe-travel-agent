@@ -6,7 +6,8 @@ import type { Profile, PlanRequest, PlanResponse } from "@/types";
 import { ProfileCard } from "@/components/ProfileCard";
 import { WalletCard } from "@/components/WalletCard";
 import { TripForm } from "@/components/TripForm";
-import { ResultCard } from "@/components/ResultCard";
+import { ResultsSection } from "@/components/ResultsSection";
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -18,17 +19,17 @@ export default function Home() {
   useEffect(() => {
     getProfile()
       .then(setProfile)
-      .catch((e) => setProfileError(e.message));
+      .catch((e: Error) => setProfileError(e.message));
   }, []);
 
   async function handlePlan(req: PlanRequest) {
     setLoading(true);
     setPlanError(null);
     setResults(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
     try {
       const res = await runPlan(req);
       setResults(res);
-      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: unknown) {
       setPlanError(e instanceof Error ? e.message : "Planning failed");
     } finally {
@@ -39,6 +40,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-50">
       <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
@@ -62,31 +64,20 @@ export default function Home() {
           </div>
         )}
 
+        {/* Loading skeleton */}
+        {loading && <LoadingSkeleton />}
+
         {/* Results */}
-        {results && results.ranked.length > 0 && (
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-zinc-900">
-              {results.ranked.length} itinerar{results.ranked.length === 1 ? "y" : "ies"} found
-            </h2>
-            {results.ranked.map((itinerary, i) => (
-              <ResultCard key={i} itinerary={itinerary} rank={i + 1} />
-            ))}
-          </section>
-        )}
-        {results && results.ranked.length === 0 && (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
-            No itineraries found for these constraints. Try relaxing the city list or duration.
-          </div>
-        )}
+        {!loading && results && <ResultsSection ranked={results.ranked} />}
 
         {/* Plan error */}
-        {planError && (
+        {!loading && planError && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
             {planError}
           </div>
         )}
 
-        {/* Trip Form */}
+        {/* Trip form */}
         <section className="rounded-2xl bg-white border border-zinc-200 p-6 shadow-sm">
           <h2 className="text-base font-semibold text-zinc-900 mb-6">
             {results ? "Plan another trip" : "Plan your trip"}
@@ -103,6 +94,7 @@ export default function Home() {
             <p className="text-sm text-zinc-400">Loading profile…</p>
           ) : null}
         </section>
+
       </div>
     </div>
   );
