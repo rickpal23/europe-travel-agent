@@ -368,6 +368,72 @@ if st.session_state.results:
                 for line in itin["breakdown"]:
                     st.markdown(f"- {line}")
 
+            # Data quality — honest labelling of where each number comes from
+            with st.expander("Data quality — live vs. config vs. estimated"):
+                cities_in_route = [c for c, _ in itin["stops"]]
+                fp = itin["flight_plan"]
+                intra_legs = itin["transit"][1:-1]  # skip transatlantic outbound/return
+
+                dq_live, dq_config, dq_est = st.columns(3)
+
+                with dq_live:
+                    st.markdown("**🌐 Live web (Tavily)**")
+                    award_results = itin.get("award_web", [])
+                    if award_results:
+                        st.markdown(
+                            f"- Award availability search: "
+                            f"✅ {len(award_results)} result(s)"
+                        )
+                        st.caption(f"_{itin.get('award_web_query', '')}_")
+                    else:
+                        st.markdown("- Award availability: ⚠️ no live data")
+                        st.caption("Set TAVILY_API_KEY in .env to enable")
+                    st.markdown("- Flight & hotel strategy tips: see *Live Web Context* above")
+
+                with dq_config:
+                    st.markdown("**📁 Config** (`config/hotels.yaml`)")
+                    for city in cities_in_route:
+                        info = engine.CITY_DATA[city]
+                        st.markdown(
+                            f"- **{city}:** {info['hotel']}  \n"
+                            f"  {info['sqft']} sqft · "
+                            f"{info['points_per_night']:,} pts/night · "
+                            f"${info['cash_per_night']}/night cash"
+                        )
+
+                with dq_est:
+                    st.markdown("**〜 Estimated / rule-of-thumb**")
+                    # Amex MR award rates
+                    first_city = itin["stops"][0][0]
+                    last_city  = itin["stops"][-1][0]
+                    out_airline, out_pp = engine.AMEX_FLIGHT_OPTIONS[first_city]
+                    ret_airline, ret_pp = engine.AMEX_FLIGHT_OPTIONS[last_city]
+                    st.markdown(
+                        f"- Outbound award: ~{out_pp:,} MR/person "
+                        f"({out_airline}, typical off-peak — not live)"
+                    )
+                    st.markdown(
+                        f"- Return award: ~{ret_pp:,} MR/person "
+                        f"({ret_airline}, typical off-peak — not live)"
+                    )
+                    # Intra-Europe transit cash estimates
+                    transit_estimates = {
+                        "Eurostar": "$180/person",
+                        "Thalys":   "$130/person",
+                        "TGV":      "$120/person",
+                        "Short flight": "$150/person",
+                    }
+                    for leg in intra_legs:
+                        for keyword, est in transit_estimates.items():
+                            if keyword in leg:
+                                leg_short = leg.split("(")[0].strip()
+                                st.markdown(f"- {leg_short}: ~{est} (estimate)")
+                                break
+                    st.markdown(
+                        "- Award space likelihood: formula using a 1–3 "
+                        "city score + departure-day adjustment (not live inventory)"
+                    )
+
             # Day-by-day plan — only for the winner to keep the page manageable
             if i == 0:
                 st.divider()
