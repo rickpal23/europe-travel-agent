@@ -38,6 +38,7 @@ USER_PROFILE = {
     "optional_cities": ["Rome", "Amsterdam", "Barcelona"],
     "avoid_cities":    ["Lisbon"],
     "total_cities":    "2 or 3",
+    "trip_style":      "balanced",
 
     "points": {"amex_mr": 200_000, "marriott_free_nights": 5, "bonvoy_points": 250_000},
 
@@ -346,14 +347,26 @@ def _route_name(cities, required):
     return " → ".join(cities)
 
 
-def generate_itineraries(required_cities, optional_cities, trip_length_str):
+def generate_itineraries(required_cities, optional_cities, trip_length_str,
+                         trip_style="balanced"):
     """
-    Build 3–5 candidate itineraries from the user's required + optional cities.
+    Build up to 5 candidate itineraries from the user's required + optional cities.
 
-    Strategy:
-    - Always include required cities (in geographic order).
-    - Try adding 0, 1, and 2 optional cities (all combinations).
-    - Cap at 5 candidates; deduplicate identical city sets.
+    Trip style controls how many cities are considered:
+      relaxed   — 2 cities max (more nights per city, fewer hotel changes)
+      balanced  — 3 cities max (mix of depth and variety)
+      maximize  — 5 cities max (visit as many places as possible)
+
+    Two geography rules are applied to every candidate before it is accepted:
+
+      Rule A – max 1 short intra-Europe flight
+        Some pairs (e.g. Amsterdam→Barcelona, Barcelona→Rome) require a flight.
+        Two back-to-back intra-Europe flights (e.g. Amsterdam→Barcelona→Rome)
+        makes the trip feel like an airport run, so those routes are skipped.
+
+      Rule B – minimum 2 nights per city
+        One night means fly in, sleep, fly out — there's no time to actually
+        see anything.  Every city in the route must have at least 2 nights.
     """
     try:
         parts = [int(p.strip()) for p in trip_length_str.split("to") if p.strip().isdigit()]
@@ -364,52 +377,118 @@ def generate_itineraries(required_cities, optional_cities, trip_length_str):
     valid_req = [c for c in required_cities if c in CITY_DATA]
     valid_opt = [c for c in optional_cities if c in CITY_DATA]
 
+    # How many optional cities can be added, based on trip style.
+    style_max = {"relaxed": 2, "balanced": 3, "maximize": 5}
+    max_cities   = max(len(valid_req), style_max.get(trip_style, 3))
+    max_optional = max(0, max_cities - len(valid_req))
+
+    # Build every combination up to the style limit (no early cap —
+    # some will be filtered, so we want all candidates before capping at 5).
     candidate_sets, seen = [], []
-    for extra_count in range(3):                          # 0, 1, or 2 optional cities added
+    for extra_count in range(max_optional + 1):
         for combo in itertools.combinations(valid_opt, extra_count):
             city_set = frozenset(valid_req) | frozenset(combo)
             if city_set not in seen:
                 seen.append(city_set)
                 candidate_sets.append(city_set)
-            if len(candidate_sets) == 5:
-                break
-        if len(candidate_sets) == 5:
-            break
 
-    origin = USER_PROFILE["origin"]
-    itineraries = []
+    origin   = USER_PROFILE["origin"]
+    accepted = []
+    skipped  = []
+
     for city_set in candidate_sets:
-        ordered   = _order_cities(city_set)
-        stops     = _allocate_nights(ordered, total_nights)
+        ordered = _order_cities(city_set)
+
+        # ── Rule A: max 1 short intra-Europe flight ───────────────────────
+        n_short = sum(
+            1 for i in range(len(ordered) - 1)
+            if "Short flight" in TRANSIT_BETWEEN.get(
+                frozenset({ordered[i], ordered[i + 1]}), ""
+            )
+        )
+        if n_short > 1:
+            skipped.append(
+                f"{' → '.join(ordered)}: {n_short} intra-Europe flights "
+                f"(max 1 allowed — too many connections)"
+            )
+            continue
+
+        # ── Night allocation ───────────────────────────────────────────────
+        stops = _allocate_nights(ordered, total_nights)
+
+        # ── Rule B: minimum 2 nights per city ────────────────────────────
+        min_nights = min(n for _, n in stops)
+        if min_nights < 2:
+            skipped.append(
+                f"{' → '.join(ordered)}: only {min_nights} night(s) in "
+                f"one city — not worth the hotel change (min 2)"
+            )
+            continue
+
+        # Build transit list for this route.
         first_apt = CITY_AIRPORTS.get(ordered[0],  ordered[0])
         last_apt  = CITY_AIRPORTS.get(ordered[-1], ordered[-1])
-
-        transit = [f"Overnight flight {origin} -> {first_apt}"]
+        transit   = [f"Overnight flight {origin} -> {first_apt}"]
         for i in range(len(ordered) - 1):
             key = frozenset({ordered[i], ordered[i + 1]})
-            transit.append(TRANSIT_BETWEEN.get(key, f"Transit {ordered[i]} → {ordered[i + 1]}"))
+            transit.append(TRANSIT_BETWEEN.get(
+                key, f"Transit {ordered[i]} → {ordered[i + 1]}"
+            ))
         transit.append(f"Daytime flight {last_apt} -> {origin}")
 
-        itineraries.append({
+        accepted.append({
             "name":    _route_name(ordered, valid_req),
             "stops":   stops,
             "transit": transit,
         })
 
-    return itineraries
+        if len(accepted) == 5:
+            break
+
+    # Safety net: if every combination was filtered (very short trips with
+    # many required cities), always include the required-cities-only route.
+    if not accepted:
+        print("   [all combinations filtered — falling back to required cities only]")
+        ordered   = _order_cities(frozenset(valid_req))
+        stops     = _allocate_nights(ordered, total_nights)
+        first_apt = CITY_AIRPORTS.get(ordered[0],  ordered[0])
+        last_apt  = CITY_AIRPORTS.get(ordered[-1], ordered[-1])
+        transit   = [f"Overnight flight {origin} -> {first_apt}"]
+        for i in range(len(ordered) - 1):
+            key = frozenset({ordered[i], ordered[i + 1]})
+            transit.append(TRANSIT_BETWEEN.get(
+                key, f"Transit {ordered[i]} → {ordered[i + 1]}"
+            ))
+        transit.append(f"Daytime flight {last_apt} -> {origin}")
+        accepted.append({
+            "name":    _route_name(ordered, valid_req),
+            "stops":   stops,
+            "transit": transit,
+        })
+
+    if skipped:
+        print(f"   [{len(skipped)} route(s) filtered by geography rules:]")
+        for s in skipped:
+            print(f"     ✗ {s}")
+
+    return accepted
 
 
 def itinerary_builder_agent(date_options):
-    required  = USER_PROFILE.get("required_cities", ["London", "Paris"])
-    optional  = USER_PROFILE.get("optional_cities", [])
-    trip_len  = USER_PROFILE.get("trip_length_days", "7 to 10")
-    origin    = USER_PROFILE["origin"]
-    candidates = generate_itineraries(required, optional, trip_len)
+    required   = USER_PROFILE.get("required_cities", ["London", "Paris"])
+    optional   = USER_PROFILE.get("optional_cities", [])
+    trip_len   = USER_PROFILE.get("trip_length_days", "7 to 10")
+    trip_style = USER_PROFILE.get("trip_style", "balanced")
+    origin     = USER_PROFILE["origin"]
+    candidates = generate_itineraries(required, optional, trip_len, trip_style=trip_style)
 
+    style_max  = {"relaxed": 2, "balanced": 3, "maximize": 5}
     print(f"itinerary_builder_agent: generated {len(candidates)} candidate itinerary/ies...")
     print(f"   required cities: {', '.join(required)}")
     print(f"   optional cities: {', '.join(optional) if optional else 'none'}")
-    print(f"   trip length: {trip_len} nights\n")
+    print(f"   trip length: {trip_len} nights")
+    print(f"   trip style:  {trip_style} (max {style_max.get(trip_style, 3)} cities, "
+          f"min 2 nights/city, max 1 intra-Europe flight)\n")
 
     built = []
     for sample in candidates:

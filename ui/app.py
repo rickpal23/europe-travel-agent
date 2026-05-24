@@ -104,7 +104,23 @@ with st.sidebar:
         default=[c for c in ["Rome", "Amsterdam", "Barcelona"] if c not in required_cities],
     )
 
-    st.caption("Route templates are fixed for now — city selection affects scoring.")
+    st.subheader("Trip Style")
+    trip_style = st.radio(
+        "How do you want to travel?",
+        options=["relaxed", "balanced", "maximize"],
+        index=1,
+        horizontal=True,
+        help=(
+            "**relaxed** — up to 2 cities, 4+ nights each, minimal hotel changes  \n"
+            "**balanced** — up to 3 cities, good mix of depth and variety  \n"
+            "**maximize** — up to 5 cities, see as much as possible"
+        ),
+    )
+    st.caption(
+        "relaxed: fewer cities, slower pace · "
+        "balanced: 2–3 cities · "
+        "maximize: pack in as many as time allows"
+    )
 
     # --- Points ---
     st.subheader("Points & Certs")
@@ -166,6 +182,7 @@ if run_clicked:
         "optional_cities": optional_cities,
         "avoid_cities":    [],
         "total_cities":    "2 or 3",
+        "trip_style":      trip_style,
         "points": {
             "amex_mr":               int(amex_mr),
             "marriott_free_nights":  int(free_nights),
