@@ -11,6 +11,12 @@ import json
 import urllib.request
 from datetime import date, timedelta
 
+from dotenv import load_dotenv
+
+# Load variables from .env into os.environ before anything else reads them.
+# This means TAVILY_API_KEY in .env is now visible to os.environ.get() below.
+# If the key is already set in the shell environment, load_dotenv() leaves it alone.
+load_dotenv()
 
 # ---------- Your settings ----------
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
@@ -202,24 +208,56 @@ ACTIVITIES = {
 
 # ---------- Helpers ----------
 def search_web(query):
+    """Return up to 3 results as dicts with content, url, and title.
+    Falls back to [] if the key is missing or the request fails."""
     print(f"   [searching the web for: \"{query}\"]")
     if not TAVILY_API_KEY:
         print("   [no TAVILY_API_KEY set — skipping web search]")
         return []
     body = json.dumps({"api_key": TAVILY_API_KEY, "query": query, "max_results": 3}).encode("utf-8")
-    req = urllib.request.Request("https://api.tavily.com/search", data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        "https://api.tavily.com/search", data=body,
+        headers={"Content-Type": "application/json"},
+    )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
-        return [r.get("content", "") for r in data.get("results", [])]
+        return [
+            {
+                "content": r.get("content", ""),
+                "url":     r.get("url", ""),
+                "title":   r.get("title", ""),
+            }
+            for r in data.get("results", [])
+        ]
     except Exception as e:
         print(f"   [web search failed: {e}]")
         return []
 
 
-def summarize(snippets, limit=3):
-    for s in snippets[:limit]:
-        first = s.split(". ")[0].strip()
+def best_snippet(results, keywords=None):
+    """Pick the most informative single sentence from a list of search results.
+    Prefers sentences that contain at least one of the given keywords."""
+    keywords = [k.lower() for k in (keywords or [])]
+    for r in results:
+        for sentence in r["content"].split(". "):
+            s = sentence.strip()
+            if len(s) < 40:
+                continue
+            if not keywords or any(k in s.lower() for k in keywords):
+                return s
+    # Fallback: first non-trivial sentence of the first result
+    if results:
+        for sentence in results[0]["content"].split(". "):
+            if len(sentence.strip()) >= 40:
+                return sentence.strip()
+    return ""
+
+
+def summarize(results, limit=3):
+    for r in results[:limit]:
+        content = r["content"] if isinstance(r, dict) else r
+        first = content.split(". ")[0].strip()
         if first:
             print(f"     - {first}.")
 
@@ -372,7 +410,8 @@ def flight_points_agent(itin, date_options):
     last_city  = itin["stops"][-1][0]
 
     # Real web search informed by the dates and route.
-    tips = search_web(f"best award availability SFO to {first_city} August dates Flying Blue Virgin Atlantic")
+    tips = search_web(f"best award availability {USER_PROFILE['origin']} to {first_city} August Flying Blue Virgin Atlantic 2026")
+    itin["award_web"] = tips   # saved so the UI can display sources
     print("   award availability tips from the web:")
     summarize(tips, limit=2)
 
@@ -826,7 +865,11 @@ def trip_planner_agent():
     print("=" * 64 + "\n")
     day_by_day_itinerary_agent(winner)
 
-    return ranked
+    web_context = {
+        "flight_tips": flight_tips,
+        "hotel_tips":  hotel_tips,
+    }
+    return ranked, web_context
 
 
 def get_day_plan(winner):

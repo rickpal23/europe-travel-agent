@@ -129,8 +129,9 @@ with st.sidebar:
 # ── Session state: persist results across Streamlit reruns ────────────────────
 # Without this, results would vanish every time the user adjusts any input field.
 if "results" not in st.session_state:
-    st.session_state.results = None  # holds the ranked itinerary list
-    st.session_state.log     = ""    # holds the agents' print output
+    st.session_state.results     = None  # holds the ranked itinerary list
+    st.session_state.web_context = {}    # holds the global web research results
+    st.session_state.log         = ""    # holds the agents' print output
 
 # ── Run the agents when the button is clicked ─────────────────────────────────
 if run_clicked:
@@ -203,9 +204,10 @@ if run_clicked:
     with st.spinner("Running travel agents…"):
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
-            ranked = engine.run_plan(profile, year=int(year))
-        st.session_state.results = ranked
-        st.session_state.log     = captured.getvalue()
+            ranked, web_context = engine.run_plan(profile, year=int(year))
+        st.session_state.results     = ranked
+        st.session_state.web_context = web_context
+        st.session_state.log         = captured.getvalue()
 
 # ── Display results ───────────────────────────────────────────────────────────
 if st.session_state.results:
@@ -270,6 +272,24 @@ if st.session_state.results:
                 f"**Award space:** {DOT.get(itin['award_likelihood'], '')} {itin['award_likelihood']}"
             )
 
+            # Web context for award availability — real sources from Tavily
+            award_web = itin.get("award_web", [])
+            if award_web:
+                st.markdown("**What the web says about award availability on this route:**")
+                for r in award_web[:2]:
+                    # Pull the most useful sentence: prefer ones mentioning points or miles
+                    sentences = [s.strip() for s in r["content"].split(". ") if len(s.strip()) > 40]
+                    keywords  = ["point", "mile", "award", "saver", "availability", "seat"]
+                    snippet   = next(
+                        (s for s in sentences if any(k in s.lower() for k in keywords)),
+                        sentences[0] if sentences else "",
+                    )
+                    if snippet:
+                        if r.get("url"):
+                            st.markdown(f"  - [{r.get('title') or r['url']}]({r['url']}): {snippet}.")
+                        else:
+                            st.markdown(f"  - {snippet}.")
+
             # Pros and cons side by side
             st.divider()
             pro_col, con_col = st.columns(2)
@@ -322,8 +342,27 @@ if st.session_state.results:
                         if day.get("points_note"):
                             st.info(day["points_note"])
 
-    # --- Agent log: what the agents actually printed ---
-    # Collapsed by default so it doesn't distract, but useful for debugging.
+    # --- Web research panel ---
+    # Shows every source Tavily returned so the user can see what informed the plan.
+    wc = st.session_state.get("web_context", {})
+    if wc.get("flight_tips") or wc.get("hotel_tips"):
+        with st.expander("🌐 Web research used for this plan"):
+            def _show_results(label, results):
+                if not results:
+                    return
+                st.markdown(f"**{label}**")
+                for r in results:
+                    sentences = [s.strip() for s in r["content"].split(". ") if len(s.strip()) > 40]
+                    snippet   = sentences[0] if sentences else r["content"][:120]
+                    if r.get("url"):
+                        st.markdown(f"- [{r.get('title') or r['url']}]({r['url']}): {snippet}.")
+                    else:
+                        st.markdown(f"- {snippet}.")
+
+            _show_results("Flight strategy", wc.get("flight_tips", []))
+            _show_results("Hotel strategy",  wc.get("hotel_tips",  []))
+
+    # --- Agent log ---
     with st.expander("Agent log (what happened behind the scenes)"):
         st.code(st.session_state.log, language=None)
 
