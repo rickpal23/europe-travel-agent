@@ -11,6 +11,9 @@ import os
 import json
 import urllib.request
 from datetime import date, timedelta
+from pathlib import Path
+
+import yaml
 
 from dotenv import load_dotenv
 
@@ -107,48 +110,8 @@ CITY_AIRPORTS = {
     "Barcelona": "BCN", "Rome": "FCO",
 }
 
-CITY_DATA = {
-    "London": {
-        "hotel": "London Marriott Hotel County Hall",
-        "room_type": "1-Bedroom Suite (king + sofa bed for kids)",
-        "sqft": 650, "fits_family_of_4": True,
-        "cash_per_night": 580, "points_per_night": 100_000,
-        "rating": 4.6, "brand": "Marriott",
-        "kid_notes": "Right next to the London Eye and Big Ben. Easy walks to Tower of London. Day trip to Warner Bros. Harry Potter Studios is a hit with both 11 and 14.",
-    },
-    "Paris": {
-        "hotel": "Paris Marriott Opera Ambassador",
-        "room_type": "Junior Suite with sofa bed",
-        "sqft": 480, "fits_family_of_4": True,
-        "cash_per_night": 520, "points_per_night": 90_000,
-        "rating": 4.5, "brand": "Marriott",
-        "kid_notes": "Eiffel Tower picnic on Champ de Mars, Louvre kids' trail (Egyptian wing has the lowest crowds), Seine boat ride. Disneyland Paris is a possible day trip.",
-    },
-    "Rome": {
-        "hotel": "The Westin Excelsior, Rome",
-        "room_type": "Deluxe Suite",
-        "sqft": 700, "fits_family_of_4": True,
-        "cash_per_night": 620, "points_per_night": 110_000,
-        "rating": 4.7, "brand": "Marriott",
-        "kid_notes": "Book a kid-focused Colosseum + Forum tour. Trastevere evenings = gelato and quiet piazzas. Ostia Antica is an easy half-day for the 14yo.",
-    },
-    "Amsterdam": {
-        "hotel": "Renaissance Amsterdam Hotel",
-        "room_type": "Family Room (1 king + 2 singles)",
-        "sqft": 380, "fits_family_of_4": True,
-        "cash_per_night": 460, "points_per_night": 75_000,
-        "rating": 4.4, "brand": "Marriott",
-        "kid_notes": "Canal boat tour first day. Anne Frank House is heavy — better for the 14yo, book ahead. NEMO Science Museum is a hit for both. Easy bike rentals.",
-    },
-    "Barcelona": {
-        "hotel": "W Barcelona",
-        "room_type": "Wonderful Suite",
-        "sqft": 580, "fits_family_of_4": True,
-        "cash_per_night": 700, "points_per_night": 120_000,
-        "rating": 4.5, "brand": "Marriott",
-        "kid_notes": "Hotel is on the beach — instant kid win. Park Güell + Sagrada Família morning, Camp Nou tour for the soccer fan, tapas in the Gothic Quarter.",
-    },
-}
+_HOTELS_FILE = Path(__file__).parent / "config" / "hotels.yaml"
+CITY_DATA: dict = yaml.safe_load(_HOTELS_FILE.read_text())
 
 
 # ---------- Activity data ----------
