@@ -147,6 +147,59 @@ CITY_DATA = {
 }
 
 
+# ---------- Activity data ----------
+ACTIVITIES = {
+    "London": [
+        ("Tower of London + Tower Bridge walk",
+         "Picnic at Tower Hill or ride the London Eye after dinner"),
+        ("British Museum highlights (Egyptian + Greek galleries)",
+         "Covent Garden market and street performers"),
+        ("Day trip: Warner Bros. Harry Potter Studios (Watford)",
+         "Hotel pool / quiet evening — it'll already be a long day"),
+        ("Westminster Abbey + Churchill War Rooms",
+         "Stroll through St. James's Park, watch the changing of the guard"),
+        ("Natural History Museum (dinosaurs!) + Science Museum next door",
+         "Hyde Park bike rentals or pedal boats on the Serpentine"),
+    ],
+    "Paris": [
+        ("Eiffel Tower lift (book tickets in advance)",
+         "Picnic on Champ de Mars at sunset"),
+        ("Louvre kids' route — Egyptian wing + Mona Lisa",
+         "Tuileries Garden + Berthillon ice cream on Île Saint-Louis"),
+        ("Seine river cruise (open-top boat, ~1 hr)",
+         "Walk through the Marais, find a creperie"),
+        ("Day trip: Versailles OR Disneyland Paris (kids vote)",
+         "Crepes for dinner, early bedtime to recover"),
+        ("Montmartre + Sacré-Cœur (funicular up the hill)",
+         "Sketching in Place du Tertre, gelato break"),
+    ],
+    "Rome": [
+        ("Colosseum + Forum (kid-focused gladiator tour)",
+         "Gelato crawl and people-watching at Piazza Navona"),
+        ("Vatican Museums + St. Peter's (book early-entry skip-the-line)",
+         "Trastevere walking dinner"),
+        ("Day trip to Ostia Antica (easier than Pompeii for kids)",
+         "Hotel pool, pizza in the neighborhood"),
+    ],
+    "Amsterdam": [
+        ("Canal boat tour (sets the geography for the kids)",
+         "Vondelpark stroll and a frites stand stop"),
+        ("Anne Frank House (book ahead) + NEMO Science Museum",
+         "Bike rental hour along the canals"),
+        ("Day trip to Zaanse Schans (windmills)",
+         "Pancake dinner at a kid-friendly spot"),
+    ],
+    "Barcelona": [
+        ("Sagrada Família + Park Güell (book Park Güell entry)",
+         "Beach time at Barceloneta"),
+        ("Camp Nou stadium tour (FC Barcelona)",
+         "Tapas crawl in the Gothic Quarter"),
+        ("La Boqueria market + Picasso Museum",
+         "Hotel pool, sunset walk"),
+    ],
+}
+
+
 # ---------- Helpers ----------
 def search_web(query):
     print(f"   [searching the web for: \"{query}\"]")
@@ -625,57 +678,6 @@ def day_by_day_itinerary_agent(winner):
     print(f"   dates: {chosen['label']}")
     print(f"   award space likelihood: {winner['award_likelihood']}\n")
 
-    activities = {
-        "London": [
-            ("Tower of London + Tower Bridge walk",
-             "Picnic at Tower Hill or ride the London Eye after dinner"),
-            ("British Museum highlights (Egyptian + Greek galleries)",
-             "Covent Garden market and street performers"),
-            ("Day trip: Warner Bros. Harry Potter Studios (Watford)",
-             "Hotel pool / quiet evening — it'll already be a long day"),
-            ("Westminster Abbey + Churchill War Rooms",
-             "Stroll through St. James's Park, watch the changing of the guard"),
-            ("Natural History Museum (dinosaurs!) + Science Museum next door",
-             "Hyde Park bike rentals or pedal boats on the Serpentine"),
-        ],
-        "Paris": [
-            ("Eiffel Tower lift (book tickets in advance)",
-             "Picnic on Champ de Mars at sunset"),
-            ("Louvre kids' route — Egyptian wing + Mona Lisa",
-             "Tuileries Garden + Berthillon ice cream on Île Saint-Louis"),
-            ("Seine river cruise (open-top boat, ~1 hr)",
-             "Walk through the Marais, find a creperie"),
-            ("Day trip: Versailles OR Disneyland Paris (kids vote)",
-             "Crepes for dinner, early bedtime to recover"),
-            ("Montmartre + Sacré-Cœur (funicular up the hill)",
-             "Sketching in Place du Tertre, gelato break"),
-        ],
-        "Rome": [
-            ("Colosseum + Forum (kid-focused gladiator tour)",
-             "Gelato crawl and people-watching at Piazza Navona"),
-            ("Vatican Museums + St. Peter's (book early-entry skip-the-line)",
-             "Trastevere walking dinner"),
-            ("Day trip to Ostia Antica (easier than Pompeii for kids)",
-             "Hotel pool, pizza in the neighborhood"),
-        ],
-        "Amsterdam": [
-            ("Canal boat tour (sets the geography for the kids)",
-             "Vondelpark stroll and a frites stand stop"),
-            ("Anne Frank House (book ahead) + NEMO Science Museum",
-             "Bike rental hour along the canals"),
-            ("Day trip to Zaanse Schans (windmills)",
-             "Pancake dinner at a kid-friendly spot"),
-        ],
-        "Barcelona": [
-            ("Sagrada Família + Park Güell (book Park Güell entry)",
-             "Beach time at Barceloneta"),
-            ("Camp Nou stadium tour (FC Barcelona)",
-             "Tapas crawl in the Gothic Quarter"),
-            ("La Boqueria market + Picasso Museum",
-             "Hotel pool, sunset walk"),
-        ],
-    }
-
     days = winner["days"]
     city_day_idx = {}
 
@@ -700,7 +702,7 @@ def day_by_day_itinerary_agent(winner):
 
         if is_first:
             airline, _ = AMEX_FLIGHT_OPTIONS[city]
-            main    = f"Fly SFO -> {city} on {airline} using Amex MR points (overnight flight)"
+            main    = f"Fly {USER_PROFILE['origin']} -> {city} on {airline} using Amex MR points (overnight flight)"
             lighter = "Easy first evening — light dinner near the hotel, early bedtime to beat jet lag"
             family  = "Day 1 is just for arriving and resting. Don't try to do anything big."
             points_note = (f"Outbound: 4 x Amex MR transfers to {airline}. "
@@ -720,7 +722,7 @@ def day_by_day_itinerary_agent(winner):
                            f"using Bonvoy points / free-night cert.")
         else:
             idx = city_day_idx.get(city, 0)
-            options = activities.get(city, [("Free exploration", "Hotel relaxation")])
+            options = ACTIVITIES.get(city, [("Free exploration", "Hotel relaxation")])
             main, lighter = options[idx % len(options)]
             family  = f"Pace stays {winner['pace']} — one main activity, one optional lighter one."
             city_day_idx[city] = idx + 1
@@ -823,6 +825,72 @@ def trip_planner_agent():
     print("DAY-BY-DAY PLAN FOR THE WINNER")
     print("=" * 64 + "\n")
     day_by_day_itinerary_agent(winner)
+
+    return ranked
+
+
+def get_day_plan(winner):
+    """Return day-by-day plan as structured dicts (no printing)."""
+    chosen = winner["dates"]
+    depart_date = chosen["depart"]
+    days = winner["days"]
+    city_day_idx = {}
+    result = []
+
+    for i, day in enumerate(days):
+        d = day["day"]
+        city = day["city"]
+        is_first = (d == 1)
+        is_last  = (i == len(days) - 1)
+        prev_city = days[i - 1]["city"] if i > 0 else None
+        is_change = (i > 0 and not is_first and not is_last and city != prev_city)
+
+        actual_date = depart_date + timedelta(days=d - 1)
+        date_str = fmt_date(actual_date)
+        points_note = None
+
+        if is_first:
+            airline, _ = AMEX_FLIGHT_OPTIONS[city]
+            main    = f"Fly {USER_PROFILE['origin']} -> {city} on {airline} using Amex MR points (overnight flight)"
+            lighter = "Easy first evening — light dinner near the hotel, early bedtime to beat jet lag"
+            family  = "Day 1 is just for arriving and resting. Don't try to do anything big."
+            points_note = (f"Outbound: {total_travelers()} x Amex MR transfers to {airline}. "
+                           f"Check into {CITY_DATA[city]['hotel']} on a Marriott free-night cert.")
+        elif is_last:
+            airline, _ = AMEX_FLIGHT_OPTIONS[city]
+            main    = f"Fly {city} -> {USER_PROFILE['origin']} on {airline} using Amex MR points"
+            lighter = "Pastry / souvenir stop near the hotel before heading to the airport"
+            family  = "Build in extra time to the airport — kids and luggage move slow."
+            points_note = f"Return: {total_travelers()} x Amex MR transfers to {airline}."
+        elif is_change:
+            main    = f"Train from {prev_city} to {city}, check in"
+            lighter = "Settle into the new hotel, dinner near the property, walk-only afternoon"
+            family  = "Travel day — keep it light, no museums."
+            points_note = (f"Check into {CITY_DATA[city]['hotel']} "
+                           f"({CITY_DATA[city]['room_type']}, {CITY_DATA[city]['sqft']} sqft) "
+                           f"using Bonvoy points / free-night cert.")
+        else:
+            idx = city_day_idx.get(city, 0)
+            options = ACTIVITIES.get(city, [("Free exploration", "Hotel relaxation")])
+            main, lighter = options[idx % len(options)]
+            family  = f"Pace stays {winner['pace']} — one main activity, one optional lighter one."
+            city_day_idx[city] = idx + 1
+
+        result.append({
+            "day": d, "city": city, "date_str": date_str,
+            "main": main, "lighter": lighter, "family": family,
+            "points_note": points_note,
+        })
+
+    return result
+
+
+def run_plan(profile, year=2026):
+    """Entry point for the Streamlit UI. Sets globals and returns ranked itineraries."""
+    global USER_PROFILE, TRAVEL_YEAR
+    USER_PROFILE = profile
+    TRAVEL_YEAR = year
+    return trip_planner_agent()
 
 
 if __name__ == "__main__":
