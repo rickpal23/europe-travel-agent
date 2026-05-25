@@ -87,7 +87,7 @@ export function DestinationPicker({ required, optional, onAdd, onCycle }: Props)
                   key={city}
                   type="button"
                   onClick={() => onCycle(city)}
-                  className="px-3 py-1 rounded-full bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 transition-colors"
+                  className="chip-spring px-3 py-1 rounded-full bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 transition-colors"
                 >
                   {city}
                 </button>
@@ -104,7 +104,7 @@ export function DestinationPicker({ required, optional, onAdd, onCycle }: Props)
                   key={city}
                   type="button"
                   onClick={() => onCycle(city)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-200 text-zinc-800 text-sm font-medium hover:bg-zinc-300 transition-colors"
+                  className="chip-spring flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-200 text-zinc-800 text-sm font-medium hover:bg-zinc-300 transition-colors"
                 >
                   {city}
                   <span className="text-zinc-500 text-xs leading-none">×</span>

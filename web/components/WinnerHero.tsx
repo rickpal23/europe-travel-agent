@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type {
   Itinerary,
   AwardAvailability,
@@ -143,6 +143,118 @@ function LiveBadge({ source }: { source: string }) {
   );
 }
 
+// ─── Recommended flight card ──────────────────────────────────────────────────
+
+function RecommendedFlightCard({
+  direction,
+  avail,
+  targetDate,
+}: {
+  direction: "outbound" | "return";
+  avail: AwardAvailability;
+  targetDate: string;
+}) {
+  const isLive = avail.source === "seats.aero";
+
+  // Pick the best recommended date from confirmed space
+  let recDate: string | null = null;
+  let dateNote = "";
+  if (avail.available && avail.dates_with_space?.length > 0) {
+    const inSpace = avail.dates_with_space.includes(targetDate);
+    if (inSpace) {
+      recDate = targetDate;
+    } else {
+      recDate = avail.dates_with_space[0];
+      dateNote = `earliest confirmed · target ${fmtDate(targetDate)} not in results`;
+    }
+  } else if (avail.available) {
+    recDate = targetDate;
+    dateNote = "estimated · confirm before booking";
+  }
+
+  const others = avail.all_programs?.filter((p) => p !== avail.program) ?? [];
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          {direction === "outbound" ? "Outbound" : "Return"}
+        </p>
+        <LiveBadge source={avail.source} />
+      </div>
+
+      <div className="px-4 pb-4 space-y-3">
+        {/* Route + program */}
+        <div>
+          <p className="text-sm font-semibold text-zinc-900">{avail.route}</p>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {avail.program}
+            {avail.cabin ? ` · ${avail.cabin}` : ""}
+          </p>
+        </div>
+
+        {avail.available && recDate ? (
+          <>
+            {/* Recommended date */}
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-base font-semibold text-zinc-900">
+                {fmtDate(recDate)}
+              </span>
+              {dateNote && (
+                <span className="text-xs text-zinc-400">{dateNote}</span>
+              )}
+            </div>
+
+            {/* Points + seat count */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+              {avail.lowest_points != null && (
+                <span className="text-zinc-700">
+                  from{" "}
+                  <span className="font-semibold text-zinc-900">
+                    {fmtPts(avail.lowest_points)}
+                  </span>{" "}
+                  pts/pax
+                </span>
+              )}
+              <span className="text-zinc-500">
+                {avail.seat_count} date
+                {avail.seat_count !== 1 ? "s" : ""} with space
+              </span>
+            </div>
+
+            {/* All dates */}
+            {avail.dates_with_space?.length > 1 && (
+              <p className="text-xs text-zinc-400">
+                Other dates: {fmtDateList(avail.dates_with_space.slice(1), 4)}
+              </p>
+            )}
+
+            {/* Also via */}
+            {others.length > 0 && (
+              <p className="text-xs text-zinc-500">
+                Also via: {others.slice(0, 4).join(", ")}
+                {others.length > 4 ? " +more" : ""}
+              </p>
+            )}
+
+            {/* Timing disclaimer + verification */}
+            <div className="text-xs text-zinc-400 space-y-0.5 pt-1 border-t border-zinc-200">
+              <p>
+                Schedule timing not yet available — verify departure time and
+                stops on {isLive ? avail.program : "a transfer partner"} before
+                booking.
+              </p>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-zinc-500">No availability found for this leg.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Flights section ─────────────────────────────────────────────────────────
 
 function FlightLeg({
@@ -206,16 +318,31 @@ function FlightsSection({
   ret,
   plan,
   transit,
+  outboundDate,
+  returnDate,
 }: {
   out: AwardAvailability;
   ret: AwardAvailability;
   plan?: FlightPlan;
   transit: string[];
+  outboundDate: string;
+  returnDate: string;
 }) {
   return (
     <div className="space-y-5">
-      <FlightLeg label="Outbound" avail={out} />
-      <FlightLeg label="Return" avail={ret} />
+      {/* Recommended booking cards */}
+      <div className="space-y-3">
+        <SectionLabel>Recommended</SectionLabel>
+        <RecommendedFlightCard direction="outbound" avail={out} targetDate={outboundDate} />
+        <RecommendedFlightCard direction="return" avail={ret} targetDate={returnDate} />
+      </div>
+
+      {/* Raw availability details */}
+      <div className="space-y-4 pt-1 border-t border-zinc-100">
+        <SectionLabel>Availability details</SectionLabel>
+        <FlightLeg label="Outbound" avail={out} />
+        <FlightLeg label="Return" avail={ret} />
+      </div>
 
       {plan && (
         <div className="rounded-xl bg-zinc-50 p-4 space-y-2.5">
@@ -557,6 +684,78 @@ function StatCell({
   );
 }
 
+// ─── Score ring ──────────────────────────────────────────────────────────────
+
+function ScoreRing({
+  score,
+  size = 72,
+  strokeWidth = 4,
+  trackColor = "rgba(255,255,255,0.12)",
+  fillColor = "white",
+  textColor = "text-white",
+  subColor = "text-zinc-500",
+  textSize = "text-2xl",
+}: {
+  score: number;
+  size?: number;
+  strokeWidth?: number;
+  trackColor?: string;
+  fillColor?: string;
+  textColor?: string;
+  subColor?: string;
+  textSize?: string;
+}) {
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setFilled(true), 150);
+    return () => clearTimeout(t);
+  }, []);
+
+  const r = (size - strokeWidth) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = filled ? circ - (score / 100) * circ : circ;
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        style={{ transform: "rotate(-90deg)" }}
+        aria-hidden
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={trackColor}
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={fillColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          style={{
+            transition: "stroke-dashoffset 1.4s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center leading-none gap-0.5">
+        <span className={`font-bold ${textColor} ${textSize}`}>
+          {Math.round(score)}
+        </span>
+        <span className={`text-[10px] ${subColor}`}>/100</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 const ODDS_STYLE: Record<string, { text: string; dot: string }> = {
@@ -614,18 +813,13 @@ export function WinnerHero({ itinerary }: { itinerary: Itinerary }) {
 
   return (
     <div className="rounded-3xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
-      {/* Dark header */}
-      <div className="bg-zinc-900 px-6 pt-5 pb-7">
+      {/* Dark header with animated gradient */}
+      <div className="hero-gradient px-6 pt-5 pb-7">
         <div className="flex items-start justify-between mb-4">
           <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">
             Best Match
           </span>
-          <div className="text-right leading-none">
-            <span className="text-4xl font-bold text-white">
-              {Math.round(score)}
-            </span>
-            <span className="text-zinc-500 text-sm"> /100</span>
-          </div>
+          <ScoreRing score={score} />
         </div>
         <h2 className="text-2xl font-bold text-white leading-tight">{name}</h2>
         <p className="text-zinc-400 text-sm mt-1">
@@ -633,7 +827,11 @@ export function WinnerHero({ itinerary }: { itinerary: Itinerary }) {
         </p>
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-4">
           {stops.map(([city, n], i) => (
-            <span key={city} className="flex items-center gap-1.5">
+            <span
+              key={city}
+              className="flex items-center gap-1.5 stop-slide"
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
               <span className="text-sm font-medium text-white">{city}</span>
               <span className="text-zinc-500 text-xs">{n}n</span>
               {i < stops.length - 1 && (
@@ -701,7 +899,14 @@ export function WinnerHero({ itinerary }: { itinerary: Itinerary }) {
       {/* Accordion sections */}
       <div className="px-6 pb-4">
         <Accordion title="Flights" summary={flightSummary}>
-          <FlightsSection out={out} ret={ret} plan={flight_plan} transit={transit} />
+          <FlightsSection
+            out={out}
+            ret={ret}
+            plan={flight_plan}
+            transit={transit}
+            outboundDate={dates.depart}
+            returnDate={dates.return}
+          />
         </Accordion>
 
         {hotel_plan && (

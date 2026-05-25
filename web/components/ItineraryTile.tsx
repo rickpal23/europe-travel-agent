@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Itinerary } from "@/types";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -19,6 +19,62 @@ function parseHotelName(line: string): string {
   const after = line.split(" — ")[1] ?? "";
   const parenIdx = after.indexOf(" (");
   return parenIdx > 0 ? after.slice(0, parenIdx) : after;
+}
+
+// ─── Score ring ───────────────────────────────────────────────────────────────
+
+function ScoreRing({ score }: { score: number }) {
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setFilled(true), 150);
+    return () => clearTimeout(t);
+  }, []);
+
+  const size = 50;
+  const sw = 3.5;
+  const r = (size - sw) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = filled ? circ - (score / 100) * circ : circ;
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        style={{ transform: "rotate(-90deg)" }}
+        aria-hidden
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="rgba(0,0,0,0.07)"
+          strokeWidth={sw}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#18181b"
+          strokeWidth={sw}
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          style={{
+            transition: "stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center leading-none gap-0.5">
+        <span className="text-base font-bold text-zinc-900">
+          {Math.round(score)}
+        </span>
+        <span className="text-[9px] text-zinc-400">/100</span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Pill components ─────────────────────────────────────────────────────────
@@ -82,6 +138,8 @@ export function ItineraryTile({
     cons,
     flight_plan,
     hotel_plan,
+    award_availability,
+    award_availability_return,
   } = itinerary;
 
   const totalPts =
@@ -104,14 +162,9 @@ export function ItineraryTile({
               {name}
             </p>
           </div>
-          <div className="shrink-0 flex items-start gap-1.5">
-            <div className="text-right leading-none mt-0.5">
-              <span className="text-2xl font-bold text-zinc-900">
-                {Math.round(score)}
-              </span>
-              <span className="text-zinc-500 text-xs">/100</span>
-            </div>
-            <span className="text-zinc-400 text-[10px] mt-2">
+          <div className="shrink-0 flex items-center gap-1.5">
+            <ScoreRing score={score} />
+            <span className="text-zinc-400 text-[10px]">
               {expanded ? "▲" : "▼"}
             </span>
           </div>
@@ -166,9 +219,25 @@ export function ItineraryTile({
           {/* Flights */}
           {flight_plan && (
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
-                Flights
-              </p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+                  Flights
+                </p>
+                {/* Source badges for outbound/return */}
+                <div className="flex gap-1.5">
+                  {award_availability && (
+                    <span
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        award_availability.source === "seats.aero"
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-zinc-100 text-zinc-500"
+                      }`}
+                    >
+                      {award_availability.source === "seats.aero" ? "Live" : "Est."}
+                    </span>
+                  )}
+                </div>
+              </div>
               <ul className="space-y-1.5">
                 <li className="text-sm text-zinc-700">{flight_plan.outbound}</li>
                 <li className="text-sm text-zinc-700">{flight_plan.return}</li>
@@ -181,6 +250,15 @@ export function ItineraryTile({
                 {flight_plan.amex_short > 0 && (
                   <li className="text-sm text-amber-600">
                     Short by {fmtPts(flight_plan.amex_short)} MR pts
+                  </li>
+                )}
+                {/* Award availability summary */}
+                {award_availability?.available && (
+                  <li className="text-xs text-zinc-500 pt-0.5">
+                    Outbound: {award_availability.seat_count} date{award_availability.seat_count !== 1 ? "s" : ""} with space via {award_availability.program}
+                    {award_availability_return?.available
+                      ? ` · Return: ${award_availability_return.seat_count} date${award_availability_return.seat_count !== 1 ? "s" : ""} via ${award_availability_return.program}`
+                      : " · Return: no space found"}
                   </li>
                 )}
               </ul>
