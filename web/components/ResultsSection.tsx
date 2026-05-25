@@ -11,21 +11,28 @@ export function ResultsSection({ ranked }: { ranked: Itinerary[] }) {
     );
   }
 
+  const alternatives = ranked.slice(1);
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <WinnerHero itinerary={ranked[0]} />
 
-      {ranked.length > 1 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 px-1 pt-3">
-            Alternatives
-          </p>
-          <div className="space-y-2">
-            {ranked.slice(1).map((it, i) => (
+      {alternatives.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-lg font-semibold text-zinc-900">
+              Other good options
+            </h2>
+            <span className="text-sm text-zinc-500">
+              {alternatives.length} alternative{alternatives.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {alternatives.map((it, i) => (
               <ItineraryTile key={i} itinerary={it} rank={i + 2} />
             ))}
           </div>
-        </>
+        </div>
       )}
     </section>
   );

@@ -72,10 +72,10 @@ function Accordion({
             {title}
           </span>
           {!open && summary && (
-            <p className="text-xs text-zinc-400 mt-0.5 leading-snug">{summary}</p>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-snug">{summary}</p>
           )}
         </div>
-        <span className="shrink-0 text-[10px] text-zinc-400 mt-0.5">
+        <span className="shrink-0 text-xs text-zinc-500 mt-0.5">
           {open ? "▲" : "▼"}
         </span>
       </button>
@@ -88,7 +88,7 @@ function Accordion({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2.5">
+    <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2.5">
       {children}
     </p>
   );
@@ -107,7 +107,7 @@ function Row({
 }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
-      <span className={`${indent ? "pl-4 text-xs text-zinc-400" : "text-zinc-600"}`}>
+      <span className={`${indent ? "pl-4 text-sm text-zinc-500" : "text-zinc-700"}`}>
         {indent ? `· ${label}` : label}
       </span>
       <span
@@ -115,8 +115,8 @@ function Row({
           bold
             ? "font-semibold text-zinc-900"
             : indent
-            ? "text-xs text-zinc-400"
-            : "text-zinc-700"
+            ? "text-sm text-zinc-500"
+            : "text-zinc-800"
         }`}
       >
         {value}
@@ -179,7 +179,7 @@ function FlightLeg({
               : ""}
           </p>
           {ok && (
-            <p className="text-xs text-zinc-400">
+            <p className="text-sm text-zinc-600">
               {avail.seat_count} date{avail.seat_count !== 1 ? "s" : ""} with
               space
               {avail.dates_with_space?.length
@@ -188,7 +188,7 @@ function FlightLeg({
             </p>
           )}
           {ok && others.length > 0 && (
-            <p className="text-xs text-zinc-400 pt-0.5">
+            <p className="text-sm text-zinc-500 pt-0.5">
               Also via:{" "}
               {others.slice(0, 5).join(", ")}
               {others.length > 5 ? " +more" : ""}
@@ -223,8 +223,8 @@ function FlightsSection({
           <p className="text-sm text-zinc-700">{plan.outbound}</p>
           <p className="text-sm text-zinc-700">{plan.return}</p>
           {plan.intra_cash > 0 && (
-            <p className="text-sm text-zinc-500">
-              Intra-Europe transit (trains/buses): ~$
+            <p className="text-sm text-zinc-600">
+              In-destination transit (trains/buses): ~$
               {plan.intra_cash.toLocaleString()}
             </p>
           )}
@@ -236,8 +236,8 @@ function FlightsSection({
           <SectionLabel>Getting around</SectionLabel>
           <ul className="space-y-1.5">
             {transit.map((t, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-zinc-600">
-                <span className="text-zinc-300 shrink-0 mt-0.5">→</span>
+              <li key={i} className="flex items-start gap-2 text-sm text-zinc-700">
+                <span className="text-zinc-400 shrink-0 mt-0.5">→</span>
                 {t}
               </li>
             ))}
@@ -257,10 +257,10 @@ function HotelsSection({ plan }: { plan: HotelPlan }) {
         const { head, hotelName, roomDesc, payment } = parseHotelLine(line);
         return (
           <div key={i} className="space-y-1.5">
-            <p className="text-xs font-semibold text-zinc-400">{head}</p>
+            <p className="text-xs font-semibold text-zinc-500">{head}</p>
             <p className="text-sm font-semibold text-zinc-900">{hotelName}</p>
             {roomDesc && (
-              <p className="text-xs text-zinc-500 leading-relaxed">{roomDesc}</p>
+              <p className="text-sm text-zinc-600 leading-relaxed">{roomDesc}</p>
             )}
             <span className="inline-flex text-xs px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-600">
               {payment}
@@ -299,7 +299,7 @@ function HotelsSection({ plan }: { plan: HotelPlan }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-zinc-400">{label}</p>
+      <p className="text-xs text-zinc-500">{label}</p>
       <p className="text-sm font-semibold text-zinc-900">{value}</p>
     </div>
   );
@@ -322,24 +322,24 @@ function DayPlanSection({ days }: { days: DayPlanEntry[] }) {
           {/* Day label */}
           <div className="shrink-0 w-16 text-right pt-0.5">
             <p className="text-xs font-semibold text-zinc-800">Day {d.day}</p>
-            <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
+            <p className="text-xs text-zinc-500 mt-0.5 leading-tight">
               {d.date_str}
             </p>
           </div>
 
           {/* Content */}
           <div className="flex-1 min-w-0 space-y-1.5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
               {d.city}
             </p>
             <p className="text-sm font-medium text-zinc-900 leading-snug">
               {d.main}
             </p>
             {d.lighter && (
-              <p className="text-xs text-zinc-500">{d.lighter}</p>
+              <p className="text-sm text-zinc-600">{d.lighter}</p>
             )}
             {d.family && (
-              <p className="text-xs text-zinc-400 italic">{d.family}</p>
+              <p className="text-sm text-zinc-500 italic">{d.family}</p>
             )}
             {d.points_note && (
               <p className="text-xs text-zinc-600 bg-zinc-50 border border-zinc-100 px-3 py-2 rounded-lg mt-2">
@@ -420,7 +420,7 @@ function PointsSection({
           />
           {plan.intra_cash > 0 && (
             <Row
-              label="Intra-Europe trains / transit"
+              label="In-destination transit"
               value={`~$${plan.intra_cash.toLocaleString()}`}
               indent
             />
@@ -461,7 +461,7 @@ function AdvancedSection({
           <SectionLabel>Score breakdown</SectionLabel>
           <ul className="space-y-1.5">
             {breakdown.map((b, i) => (
-              <li key={i} className="text-xs text-zinc-500">
+              <li key={i} className="text-sm text-zinc-600">
                 {b}
               </li>
             ))}
@@ -473,7 +473,7 @@ function AdvancedSection({
           {researchNotes.confidence && (
             <div>
               <SectionLabel>Confidence</SectionLabel>
-              <p className="text-xs text-zinc-500">
+              <p className="text-sm text-zinc-600">
                 {researchNotes.confidence}
               </p>
             </div>
@@ -481,7 +481,7 @@ function AdvancedSection({
           {researchNotes.hotel && (
             <div>
               <SectionLabel>Hotel research note</SectionLabel>
-              <p className="text-xs text-zinc-500 leading-relaxed">
+              <p className="text-sm text-zinc-600 leading-relaxed">
                 {researchNotes.hotel}
               </p>
             </div>
@@ -489,7 +489,7 @@ function AdvancedSection({
           {researchNotes.flight && (
             <div>
               <SectionLabel>Flight research note</SectionLabel>
-              <p className="text-xs text-zinc-500 leading-relaxed">
+              <p className="text-sm text-zinc-600 leading-relaxed">
                 {researchNotes.flight}
               </p>
             </div>
@@ -551,7 +551,7 @@ function StatCell({
 }) {
   return (
     <div className="bg-white px-3 py-4 text-center">
-      <p className="text-xs text-zinc-400 mb-1.5">{label}</p>
+      <p className="text-xs text-zinc-500 mb-1.5">{label}</p>
       {children}
     </div>
   );
@@ -656,7 +656,7 @@ export function WinnerHero({ itinerary }: { itinerary: Itinerary }) {
             {fmtPts(totalPts)}
           </p>
           {totalPts != null && (
-            <p className="text-[10px] text-zinc-400 mt-0.5">lowest/pax</p>
+            <p className="text-xs text-zinc-500 mt-0.5">lowest/pax</p>
           )}
         </StatCell>
         <StatCell label="Award odds">

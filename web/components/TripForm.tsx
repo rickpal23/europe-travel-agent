@@ -25,7 +25,7 @@ interface Props {
 
 export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props) {
   const [required, setRequired] = useState<string[]>(["London", "Paris"]);
-  const [optional, setOptional] = useState<string[]>([]);
+  const [optional, setOptional] = useState<string[]>(["Amsterdam", "Rome"]);
   const [style, setStyle] = useState("balanced");
   const [year, setYear] = useState(2026);
   const [minDays, setMinDays] = useState(7);

@@ -3,17 +3,62 @@
 import { useState } from "react";
 import type { Itinerary } from "@/types";
 
-const ODDS_COLOR: Record<string, string> = {
-  High: "text-emerald-600",
-  Medium: "text-amber-600",
-  Low: "text-red-600",
-};
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function fmtPts(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function parseHotelName(line: string): string {
   const after = line.split(" — ")[1] ?? "";
   const parenIdx = after.indexOf(" (");
   return parenIdx > 0 ? after.slice(0, parenIdx) : after;
 }
+
+// ─── Pill components ─────────────────────────────────────────────────────────
+
+function StatPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center text-sm px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700 font-medium">
+      {children}
+    </span>
+  );
+}
+
+const ODDS_PILL: Record<string, string> = {
+  High: "bg-emerald-50 text-emerald-700",
+  Medium: "bg-amber-50 text-amber-700",
+  Low: "bg-red-50 text-red-700",
+};
+
+function OddsPill({ odds }: { odds: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full font-medium ${
+        ODDS_PILL[odds] ?? "bg-zinc-100 text-zinc-700"
+      }`}
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${
+          odds === "High"
+            ? "bg-emerald-500"
+            : odds === "Medium"
+            ? "bg-amber-500"
+            : "bg-red-500"
+        }`}
+      />
+      {odds} odds
+    </span>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function ItineraryTile({
   itinerary,
@@ -30,6 +75,7 @@ export function ItineraryTile({
     score,
     total_cash,
     nights,
+    moves,
     award_likelihood,
     dates,
     pros,
@@ -38,73 +84,103 @@ export function ItineraryTile({
     hotel_plan,
   } = itinerary;
 
+  const totalPts =
+    (flight_plan?.amex_used ?? 0) + (hotel_plan?.points_used ?? 0);
+
   return (
     <div className="rounded-2xl bg-white border border-zinc-200 shadow-sm overflow-hidden">
-      {/* Summary row — tap to expand */}
+      {/* Collapsed card — tap to expand */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full text-left px-4 py-4 flex items-start justify-between gap-4 hover:bg-zinc-50/70 transition-colors"
+        className="w-full text-left p-4 space-y-3 hover:bg-zinc-50/60 transition-colors"
       >
-        <div className="flex items-start gap-3 min-w-0">
-          <span className="shrink-0 w-7 h-7 rounded-full bg-zinc-100 text-zinc-500 text-xs font-semibold flex items-center justify-center">
-            {rank}
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold text-zinc-900 text-sm leading-snug truncate">
+        {/* Row 1: rank + name + score */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="shrink-0 w-7 h-7 rounded-full bg-zinc-100 text-zinc-700 text-xs font-bold flex items-center justify-center mt-0.5">
+              {rank}
+            </span>
+            <p className="font-semibold text-zinc-900 leading-snug mt-0.5">
               {name}
             </p>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              {nights}n &middot; ${total_cash.toLocaleString()} &middot;{" "}
-              <span className={ODDS_COLOR[award_likelihood]}>
-                {award_likelihood} odds
+          </div>
+          <div className="shrink-0 flex items-start gap-1.5">
+            <div className="text-right leading-none mt-0.5">
+              <span className="text-2xl font-bold text-zinc-900">
+                {Math.round(score)}
               </span>
-            </p>
+              <span className="text-zinc-500 text-xs">/100</span>
+            </div>
+            <span className="text-zinc-400 text-[10px] mt-2">
+              {expanded ? "▲" : "▼"}
+            </span>
           </div>
         </div>
-        <div className="shrink-0 flex items-center gap-2">
-          <span className="text-xl font-bold text-zinc-900 leading-none">
-            {Math.round(score)}
-          </span>
-          <span className="text-zinc-300 text-[10px]">
-            {expanded ? "▲" : "▼"}
-          </span>
+
+        {/* Row 2: key trip facts */}
+        <p className="text-sm text-zinc-600 pl-10">
+          {nights} nights &middot;{" "}
+          {dates.depart_day.slice(0, 3)} {fmtDate(dates.depart)} &middot;{" "}
+          {moves} hotel change{moves !== 1 ? "s" : ""}
+        </p>
+
+        {/* Row 3: stat pills */}
+        <div className="flex flex-wrap gap-2 pl-10">
+          <StatPill>${total_cash.toLocaleString()} cash</StatPill>
+          {totalPts > 0 && (
+            <StatPill>{fmtPts(totalPts)} pts total</StatPill>
+          )}
+          <OddsPill odds={award_likelihood} />
         </div>
+
+        {/* Row 4: one-sentence differentiator */}
+        {pros[0] && (
+          <p className="text-sm text-zinc-600 pl-10 leading-snug">
+            {pros[0]}
+          </p>
+        )}
       </button>
 
-      {/* Expanded content */}
+      {/* Expanded details */}
       {expanded && (
-        <div className="border-t border-zinc-100 px-4 pt-4 pb-5 space-y-5">
+        <div className="border-t border-zinc-100 px-4 pt-5 pb-5 space-y-5">
           {/* Route */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
               Route
             </p>
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {stops.map(([city, n], i) => (
                 <span key={city} className="flex items-center gap-1.5 text-sm">
                   <span className="font-medium text-zinc-900">{city}</span>
-                  <span className="text-zinc-400 text-xs">{n}n</span>
+                  <span className="text-zinc-500 text-xs">{n}n</span>
                   {i < stops.length - 1 && (
-                    <span className="text-zinc-300 text-xs">→</span>
+                    <span className="text-zinc-400 text-xs">→</span>
                   )}
                 </span>
               ))}
             </div>
-            <p className="text-xs text-zinc-400 mt-1.5">{dates.label}</p>
+            <p className="text-sm text-zinc-500 mt-1.5">{dates.label}</p>
           </div>
 
           {/* Flights */}
           {flight_plan && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
                 Flights
               </p>
               <ul className="space-y-1.5">
                 <li className="text-sm text-zinc-700">{flight_plan.outbound}</li>
                 <li className="text-sm text-zinc-700">{flight_plan.return}</li>
                 {flight_plan.intra_cash > 0 && (
-                  <li className="text-xs text-zinc-400">
-                    Intra-Europe transit: ~${flight_plan.intra_cash.toLocaleString()}
+                  <li className="text-sm text-zinc-600">
+                    In-destination transit: ~$
+                    {flight_plan.intra_cash.toLocaleString()}
+                  </li>
+                )}
+                {flight_plan.amex_short > 0 && (
+                  <li className="text-sm text-amber-600">
+                    Short by {fmtPts(flight_plan.amex_short)} MR pts
                   </li>
                 )}
               </ul>
@@ -114,10 +190,10 @@ export function ItineraryTile({
           {/* Hotels */}
           {hotel_plan && hotel_plan.lines.length > 0 && (
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
                 Hotels
               </p>
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {hotel_plan.lines.map((line, i) => {
                   const parts = line.split(" — ");
                   const cityNights = parts[0] ?? "";
@@ -125,17 +201,17 @@ export function ItineraryTile({
                   const payment = parts[2] ?? "";
                   return (
                     <li key={i} className="text-sm">
-                      <span className="text-zinc-400">{cityNights} · </span>
-                      <span className="text-zinc-800 font-medium">{hotelName}</span>
+                      <span className="text-zinc-500">{cityNights} · </span>
+                      <span className="text-zinc-900 font-medium">{hotelName}</span>
                       {payment && (
-                        <span className="text-zinc-400"> · {payment}</span>
+                        <span className="text-zinc-600"> · {payment}</span>
                       )}
                     </li>
                   );
                 })}
               </ul>
               {hotel_plan.small_room_count > 0 && (
-                <p className="text-xs text-amber-600 mt-2">
+                <p className="text-sm text-amber-600 mt-2">
                   {hotel_plan.small_room_count} room
                   {hotel_plan.small_room_count > 1 ? "s are" : " is"} under
                   400 sqft
@@ -144,15 +220,50 @@ export function ItineraryTile({
             </div>
           )}
 
+          {/* Points breakdown */}
+          {(flight_plan || hotel_plan) && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">
+                Points used
+              </p>
+              <div className="space-y-1.5 text-sm">
+                {flight_plan && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-700">Amex MR (flights)</span>
+                    <span className="font-medium text-zinc-900">
+                      {fmtPts(flight_plan.amex_used)} pts
+                    </span>
+                  </div>
+                )}
+                {hotel_plan && hotel_plan.certs_used > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-700">Bonvoy free-night certs</span>
+                    <span className="font-medium text-zinc-900">
+                      {hotel_plan.certs_used} cert{hotel_plan.certs_used !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
+                {hotel_plan && hotel_plan.points_used > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-700">Bonvoy pts (hotels)</span>
+                    <span className="font-medium text-zinc-900">
+                      {fmtPts(hotel_plan.points_used)} pts
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Pros */}
           {pros.length > 0 && (
             <ul className="space-y-1.5">
-              {pros.slice(0, 3).map((p, i) => (
+              {pros.slice(0, 4).map((p, i) => (
                 <li
                   key={i}
-                  className="flex items-start gap-2 text-sm text-zinc-600"
+                  className="flex items-start gap-2 text-sm text-zinc-700"
                 >
-                  <span className="text-emerald-400 shrink-0 mt-0.5">✓</span>
+                  <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>
                   {p}
                 </li>
               ))}
@@ -162,12 +273,12 @@ export function ItineraryTile({
           {/* Cons */}
           {cons.length > 0 && (
             <ul className="space-y-1.5">
-              {cons.slice(0, 3).map((c, i) => (
+              {cons.map((c, i) => (
                 <li
                   key={i}
-                  className="flex items-start gap-2 text-sm text-zinc-400"
+                  className="flex items-start gap-2 text-sm text-zinc-600"
                 >
-                  <span className="text-zinc-300 shrink-0 mt-0.5">−</span>
+                  <span className="text-zinc-400 shrink-0 mt-0.5">−</span>
                   {c}
                 </li>
               ))}

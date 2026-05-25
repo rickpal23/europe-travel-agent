@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Travel Points Planner",
-  description: "Plan your Europe trip using points and miles",
+  description: "Build your ideal trip and redeem points for maximum value.",
 };
 
 export default function RootLayout({

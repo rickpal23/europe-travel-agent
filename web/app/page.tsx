@@ -44,10 +44,10 @@ export default function Home() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
-            Europe Trip Planner
+            Travel Points Planner
           </h1>
-          <p className="mt-1 text-zinc-500 text-sm">
-            Plan your itinerary and redeem points for maximum value.
+          <p className="mt-1 text-zinc-600 text-sm">
+            Build your ideal trip and redeem points for maximum value.
           </p>
         </div>
 
@@ -91,7 +91,7 @@ export default function Home() {
               loading={loading}
             />
           ) : !profileError ? (
-            <p className="text-sm text-zinc-400">Loading profile…</p>
+            <p className="text-sm text-zinc-500">Loading profile…</p>
           ) : null}
         </section>
 
