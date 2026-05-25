@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getProfile, runPlan } from "@/lib/api";
-import type { Profile, PlanRequest, PlanResponse } from "@/types";
+import { getProfile, saveProfile, runPlan } from "@/lib/api";
+import type { Profile, PlanRequest, PlanResponse, Travelers, Wallet } from "@/types";
 import { ProfileCard } from "@/components/ProfileCard";
 import { WalletCard } from "@/components/WalletCard";
 import { TripForm } from "@/components/TripForm";
@@ -21,6 +21,18 @@ export default function Home() {
       .then(setProfile)
       .catch((e: Error) => setProfileError(e.message));
   }, []);
+
+  async function handleSaveProfile(
+    updates: { name: string; origin: string; travelers: Travelers }
+  ) {
+    const updated = await saveProfile(updates);
+    setProfile(updated);
+  }
+
+  async function handleSaveWallet(wallet: Wallet) {
+    const updated = await saveProfile({ wallet });
+    setProfile(updated);
+  }
 
   async function handlePlan(req: PlanRequest) {
     setLoading(true);
@@ -59,8 +71,8 @@ export default function Home() {
         )}
         {profile && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <ProfileCard profile={profile} />
-            <WalletCard wallet={profile.wallet} />
+            <ProfileCard profile={profile} onSave={handleSaveProfile} />
+            <WalletCard wallet={profile.wallet} onSave={handleSaveWallet} />
           </div>
         )}
 

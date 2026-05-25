@@ -2,17 +2,24 @@
 
 import { useState } from "react";
 import type { PlanRequest, Travelers, Wallet } from "@/types";
-
-const CITY_OPTIONS = [
-  "London", "Paris", "Rome", "Barcelona", "Amsterdam",
-  "Lisbon", "Prague", "Vienna", "Dublin", "Athens",
-  "Copenhagen", "Budapest", "Florence", "Zurich", "Porto",
-];
+import { DestinationPicker } from "@/components/DestinationPicker";
 
 const STYLE_OPTIONS = [
-  { value: "relaxed", label: "Relaxed" },
-  { value: "balanced", label: "Balanced" },
-  { value: "packed", label: "Packed" },
+  {
+    value: "relaxed",
+    label: "Relaxed",
+    description: "Fewer cities, slower pace, easier with kids",
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "Mix of sightseeing and downtime",
+  },
+  {
+    value: "packed",
+    label: "Packed",
+    description: "More destinations, faster-moving itinerary",
+  },
 ];
 
 interface Props {
@@ -31,12 +38,16 @@ export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props
   const [minDays, setMinDays] = useState(7);
   const [maxDays, setMaxDays] = useState(10);
 
-  function toggleCity(city: string, list: string[], setList: (v: string[]) => void, other: string[], setOther: (v: string[]) => void) {
-    if (list.includes(city)) {
-      setList(list.filter((c) => c !== city));
+  function addCity(city: string) {
+    setRequired(prev => [...prev, city]);
+  }
+
+  function cycleChip(city: string) {
+    if (required.includes(city)) {
+      setRequired(prev => prev.filter(c => c !== city));
+      setOptional(prev => [...prev, city]);
     } else {
-      setOther(other.filter((c) => c !== city));
-      setList([...list, city]);
+      setOptional(prev => prev.filter(c => c !== city));
     }
   }
 
@@ -55,76 +66,59 @@ export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props
     });
   }
 
+  const inputCls =
+    "w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+
+      {/* ── Destinations ─────────────────────────────────────── */}
       <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">
+        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Destinations
         </p>
-        <p className="text-xs text-zinc-500 mb-2">Required (must visit)</p>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {CITY_OPTIONS.map((city) => (
-            <button
-              key={city}
-              type="button"
-              onClick={() => toggleCity(city, required, setRequired, optional, setOptional)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                required.includes(city)
-                  ? "bg-zinc-900 text-white"
-                  : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-400"
-              }`}
-            >
-              {city}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-zinc-500 mb-2">Optional (nice to have)</p>
-        <div className="flex flex-wrap gap-2">
-          {CITY_OPTIONS.map((city) => (
-            <button
-              key={city}
-              type="button"
-              onClick={() => toggleCity(city, optional, setOptional, required, setRequired)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                optional.includes(city)
-                  ? "bg-zinc-500 text-white"
-                  : required.includes(city)
-                  ? "opacity-30 cursor-default bg-white border border-zinc-200 text-zinc-700"
-                  : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-400"
-              }`}
-              disabled={required.includes(city)}
-            >
-              {city}
-            </button>
-          ))}
-        </div>
+        <DestinationPicker
+          required={required}
+          optional={optional}
+          onAdd={addCity}
+          onCycle={cycleChip}
+        />
       </div>
 
+      {/* ── Travel style ──────────────────────────────────────── */}
       <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">
+        <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
           Travel Style
         </p>
         <div className="flex gap-3">
-          {STYLE_OPTIONS.map((opt) => (
+          {STYLE_OPTIONS.map(opt => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setStyle(opt.value)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`flex-1 py-3 px-2.5 rounded-xl text-left transition-colors ${
                 style === opt.value
                   ? "bg-zinc-900 text-white"
                   : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-400"
               }`}
             >
-              {opt.label}
+              <p className="text-sm font-semibold leading-snug mb-1">{opt.label}</p>
+              <p
+                className={`text-xs leading-snug ${
+                  style === opt.value ? "text-zinc-400" : "text-zinc-500"
+                }`}
+              >
+                {opt.description}
+              </p>
             </button>
           ))}
         </div>
       </div>
 
+      {/* ── When ─────────────────────────────────────────────── */}
       <div className="flex gap-4 items-end">
         <div className="flex-1">
-          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500 block mb-2">
             Year
           </label>
           <input
@@ -132,12 +126,12 @@ export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props
             value={year}
             min={2025}
             max={2030}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+            onChange={e => setYear(Number(e.target.value))}
+            className={inputCls}
           />
         </div>
         <div className="flex-1">
-          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500 block mb-2">
             Min days
           </label>
           <input
@@ -145,12 +139,12 @@ export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props
             value={minDays}
             min={3}
             max={30}
-            onChange={(e) => setMinDays(Number(e.target.value))}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+            onChange={e => setMinDays(Number(e.target.value))}
+            className={inputCls}
           />
         </div>
         <div className="flex-1">
-          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500 block mb-2">
             Max days
           </label>
           <input
@@ -158,8 +152,8 @@ export function TripForm({ origin, travelers, wallet, onSubmit, loading }: Props
             value={maxDays}
             min={3}
             max={30}
-            onChange={(e) => setMaxDays(Number(e.target.value))}
-            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+            onChange={e => setMaxDays(Number(e.target.value))}
+            className={inputCls}
           />
         </div>
       </div>
